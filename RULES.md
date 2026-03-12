@@ -230,10 +230,11 @@ This file contains ALL core logic:
    python -m py_compile arb_engine.py
    ```
 
-2. **Quick test with small size**
+2. **Test run**
    ```bash
-   python run_with_ui.py --size 10 --entry 4 --exit 16
+   python run_with_ui.py --size 100 --entry 4 --exit 16
    ```
+   Note: Always use $100 minimum - smaller sizes give inaccurate spreads.
 
 3. **Watch for these success indicators:**
    - Token expires in positive seconds
@@ -316,7 +317,7 @@ This file contains ALL core logic:
 
 ### Launch Command
 ```bash
-python run_with_ui.py --entry 4 --exit 16 --size 10
+python run_with_ui.py --entry 4 --exit 16 --size 100
 ```
 
 ### Kill Command
