@@ -31,8 +31,10 @@
 4. **Launch command**
    ```bash
    cd /Users/neerajk/Desktop/btc-intelligence
-   python run_with_ui.py --entry 4 --exit 16 --size 10
+   python run_with_ui.py --entry 4 --exit 16 --size 100
    ```
+   
+   **IMPORTANT**: Always use --size 100 (not $10). Smaller orders have inflated spreads due to fixed fees.
 
 5. **Verify startup sequence**
    Look for these logs IN ORDER:

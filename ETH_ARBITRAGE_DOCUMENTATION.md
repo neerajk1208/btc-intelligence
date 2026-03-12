@@ -269,12 +269,14 @@ Options:
 ### Example Commands
 
 ```bash
-# Test run with $10, entry ≤4 bps, exit ≥16 bps
-python run_with_ui.py --size 10 --entry 4 --exit 16
+# Standard run with $100, entry ≤4 bps, exit ≥16 bps
+python run_with_ui.py --size 100 --entry 4 --exit 16
 
-# Production run with $100
+# Run indefinitely
 python run_with_ui.py --size 100 --entry 4 --exit 16 --cycles 999
 ```
+
+**WARNING**: Do NOT use $10 for testing - the spread calculation will be inaccurate due to fixed fees. Always use $100 minimum.
 
 ### Web UI
 
