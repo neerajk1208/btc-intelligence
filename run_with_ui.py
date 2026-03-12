@@ -8,9 +8,18 @@ sys.stdout.reconfigure(line_buffering=True)
 import asyncio
 import threading
 import argparse
-from web.app import app, socketio, ui_state, emit_update, log_event
+import os
+from web.app import (
+    app, socketio, ui_state, emit_update, log_event,
+    is_engine_stopped, clear_stop_flag, set_restart_callback
+)
 import arb_engine
-from arb_engine import ArbEngine
+from arb_engine import ArbEngine, set_stop_check
+
+# Global reference for restart
+_engine_args = None
+_engine_loop = None
+_restart_requested = threading.Event()
 
 def handle_ui_event(event_type: str, data: dict):
     """Handle UI events from arb engine."""
@@ -95,7 +104,6 @@ def handle_ui_event(event_type: str, data: dict):
 
 def run_web_server():
     """Run Flask web server in a thread."""
-    import os
     port = int(os.environ.get('PORT', 5000))
     socketio.run(app, host='0.0.0.0', port=port, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
 
@@ -108,10 +116,67 @@ async def run_engine(args):
     engine.USE_TURBO = not args.prime
     engine.SLIPPAGE_TOLERANCE = f"{args.slip / 10000:.6f}"
     
-    await engine.run(num_cycles=args.cycles)
+    try:
+        await engine.run(num_cycles=args.cycles)
+    except Exception as e:
+        print(f"[ENGINE] Error: {e}")
+        log_event("ERROR", f"Engine crashed: {e}")
+    finally:
+        # Update UI to show stopped
+        if is_engine_stopped():
+            ui_state["status"] = "STOPPED"
+            ui_state["mode"] = "STOPPED"
+            emit_update()
+            log_event("WARNING", "Engine stopped")
+        else:
+            ui_state["status"] = "IDLE"
+            emit_update()
+
+
+def request_restart():
+    """Called from UI to request a restart."""
+    global _restart_requested
+    print("[RESTART] Restart requested from UI")
+    _restart_requested.set()
+
+
+async def engine_loop(args):
+    """Main engine loop with restart support."""
+    global _restart_requested
+    
+    while True:
+        # Clear any previous stop flag
+        clear_stop_flag()
+        _restart_requested.clear()
+        
+        # Run the engine
+        print(f"\n[ENGINE] Starting arbitrage engine...")
+        print(f"[ENGINE] Size: ${args.size}, Entry: {args.entry}bp, Exit: {args.exit}bp")
+        print(f"[ENGINE] Mode: {'PRIME' if args.prime else 'TURBO'}, Slippage tolerance: {args.slip}bp\n")
+        
+        await run_engine(args)
+        
+        # Check if we should restart
+        if _restart_requested.is_set():
+            print("[ENGINE] Restarting in 2 seconds...")
+            log_event("INFO", "Engine restarting...")
+            await asyncio.sleep(2)
+            continue
+        else:
+            # Engine stopped without restart request - wait for restart
+            print("[ENGINE] Engine stopped. Waiting for restart command...")
+            
+            # Wait for restart signal
+            while not _restart_requested.is_set():
+                await asyncio.sleep(0.5)
+            
+            print("[ENGINE] Restart signal received")
+            continue
 
 
 def main():
+    global _engine_args
+    
     parser = argparse.ArgumentParser(description="ETH Arbitrage Engine with Web UI")
     parser.add_argument("--size", type=float, default=100, help="Order size in USD")
     parser.add_argument("--cycles", type=int, default=999, help="Number of cycles to run")
@@ -121,23 +186,25 @@ def main():
     parser.add_argument("--slip", type=float, default=5.0, help="Slippage tolerance in bps")
     
     args = parser.parse_args()
+    _engine_args = args
     
     # Set UI callback
     arb_engine.set_ui_callback(handle_ui_event)
     
+    # Set stop check callback
+    set_stop_check(is_engine_stopped)
+    
+    # Set restart callback
+    set_restart_callback(request_restart)
+    
     # Start web server in background thread
-    import os
     port = int(os.environ.get('PORT', 5000))
     print(f"\n[WEB UI] Starting at http://localhost:{port}")
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
     
-    # Run engine in main thread
-    print(f"[ENGINE] Starting arbitrage engine...")
-    print(f"[ENGINE] Size: ${args.size}, Entry: {args.entry}bp, Exit: {args.exit}bp")
-    print(f"[ENGINE] Mode: {'PRIME' if args.prime else 'TURBO'}, Slippage tolerance: {args.slip}bp\n")
-    
-    asyncio.run(run_engine(args))
+    # Run engine loop (handles restarts)
+    asyncio.run(engine_loop(args))
 
 
 if __name__ == "__main__":

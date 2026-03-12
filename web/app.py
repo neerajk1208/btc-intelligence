@@ -8,11 +8,30 @@ from flask_socketio import SocketIO
 import threading
 import queue
 import json
+import os
+import sys
 from datetime import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'arb-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Engine control
+engine_stop_flag = threading.Event()
+engine_restart_callback = None  # Set by run_with_ui.py
+
+def set_restart_callback(callback):
+    """Set the callback function to restart the engine."""
+    global engine_restart_callback
+    engine_restart_callback = callback
+
+def is_engine_stopped():
+    """Check if the engine should stop."""
+    return engine_stop_flag.is_set()
+
+def clear_stop_flag():
+    """Clear the stop flag for restart."""
+    engine_stop_flag.clear()
 
 # Global state for UI
 ui_state = {
@@ -171,6 +190,39 @@ def get_state():
 @socketio.on('connect')
 def handle_connect():
     emit_update()
+
+@socketio.on('stop_engine')
+def handle_stop():
+    """Handle stop request from UI."""
+    print("[UI] Stop requested")
+    engine_stop_flag.set()
+    ui_state["status"] = "STOPPING..."
+    ui_state["mode"] = "STOPPED"
+    log_event("WARNING", "Engine stop requested from UI")
+    emit_update()
+
+@socketio.on('restart_engine')
+def handle_restart():
+    """Handle restart request from UI."""
+    global engine_restart_callback
+    print("[UI] Restart requested")
+    
+    # Clear stop flag first
+    engine_stop_flag.clear()
+    
+    ui_state["status"] = "RESTARTING..."
+    ui_state["mode"] = "WARMUP"
+    log_event("INFO", "Engine restart requested from UI")
+    emit_update()
+    
+    # Call restart callback if set
+    if engine_restart_callback:
+        try:
+            engine_restart_callback()
+        except Exception as e:
+            log_event("ERROR", f"Restart failed: {e}")
+    else:
+        log_event("WARNING", "Restart callback not set - manual restart required")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=False)

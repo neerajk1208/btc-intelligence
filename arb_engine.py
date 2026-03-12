@@ -43,6 +43,20 @@ load_dotenv()
 # UI callback - set by web server if running with UI
 ui_callback: Optional[Callable] = None
 
+# Stop flag - checked by engine to know when to stop
+_stop_check: Optional[Callable] = None
+
+def set_stop_check(check_fn: Callable):
+    """Set function to check if engine should stop."""
+    global _stop_check
+    _stop_check = check_fn
+
+def should_stop() -> bool:
+    """Check if engine should stop."""
+    if _stop_check:
+        return _stop_check()
+    return False
+
 def set_ui_callback(callback: Callable):
     """Set callback for UI updates."""
     global ui_callback
@@ -1267,6 +1281,12 @@ class ArbEngine:
         
         # Phase 1: Wait for entry
         while not self.in_position:
+            # Check if we should stop
+            if should_stop():
+                print("[ENGINE] Stop requested - halting entry monitoring")
+                notify_ui("event", {"type": "WARNING", "message": "Engine stopped by user"})
+                return False
+            
             # Get synchronized prices (BUY quote for entry)
             hl_price, def_price = await self.get_prices()
             
@@ -1302,6 +1322,13 @@ class ArbEngine:
         print(f"\n--- IN POSITION: Waiting for exit signal (>={self.EXIT_THRESHOLD_BPS}bp) ---\n")
         
         while self.in_position:
+            # Check if we should stop (WARNING: position still open!)
+            if should_stop():
+                print("[ENGINE] Stop requested - WARNING: POSITION STILL OPEN!")
+                print(f"[ENGINE] DEF WETH: {self.def_weth_amount:.6f}, HL ETH short: {self.hl_size_eth:.4f}")
+                notify_ui("event", {"type": "ERROR", "message": f"Engine stopped with OPEN POSITION! WETH: {self.def_weth_amount:.4f}, HL short: {self.hl_size_eth:.4f}"})
+                return False
+            
             # Use SELL quote for exit spread detection (get valid quoteId for exit)
             hl_price, def_price = await self.get_exit_prices(self.def_weth_amount_raw)
             
