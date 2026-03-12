@@ -22,7 +22,9 @@ When ETH prices diverge between spot and perp markets, we capture the spread by 
 | Exit Threshold | ≥ 16 bps spread |
 | Estimated Round-Trip Fees | ~13 bps |
 | Minimum Profitable Spread | ~13 bps captured |
-| Order Size | Configurable ($10 test, $100+ production) |
+| Order Size | **$100 USDC** (minimum recommended) |
+
+**IMPORTANT**: Always use $100+ order size. Smaller orders ($10) have inflated spreads due to fixed fees being a larger percentage of the trade.
 
 ---
 
