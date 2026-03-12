@@ -327,8 +327,9 @@ class ArbEngine:
         return True
     
     def _maybe_reload_tokens(self) -> bool:
-        """Check for updated tokens from Playwright session (non-blocking).
+        """Check for updated tokens from env vars or file (non-blocking).
         
+        Checks env vars first (for Railway hot-reload), then falls back to file.
         Returns True if tokens were reloaded.
         """
         now = time.time()
@@ -336,6 +337,34 @@ class ArbEngine:
             return False
         
         self._last_token_check = now
+        
+        # Check env vars first (Railway updates these live)
+        new_access = os.environ.get("PRIVY_ACCESS_TOKEN", "")
+        new_id = os.environ.get("PRIVY_ID_TOKEN", "")
+        
+        if new_access and new_access != self.privy_token:
+            # New tokens from env vars - update everything
+            self.privy_token = new_access
+            self.privy_id_token = new_id
+            self._token_valid_until = self._decode_jwt_exp(new_access)
+            
+            # Update session cookies
+            if self.session:
+                from yarl import URL
+                self.session.cookie_jar.update_cookies(
+                    {"privy-token": new_access, "privy-id-token": new_id},
+                    URL("https://api.definitive.fi")
+                )
+                self.session.cookie_jar.update_cookies(
+                    {"privy-token": new_access, "privy-id-token": new_id},
+                    URL("https://client-api.definitive.fi")
+                )
+            
+            exp_time = time.strftime("%H:%M:%S", time.localtime(self._token_valid_until))
+            print(f"[TOKEN] Reloaded from env vars, expires at {exp_time}")
+            return True
+        
+        # Fall back to file-based loading
         return self._load_tokens_from_file()
     
     def _maybe_reload_tokens_legacy(self) -> bool:
