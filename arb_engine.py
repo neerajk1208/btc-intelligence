@@ -1391,7 +1391,12 @@ class ArbEngine:
             
             # Run cycles
             for i in range(num_cycles):
-                await self.run_cycle()
+                cycle_completed = await self.run_cycle()
+                
+                # Check if stopped or cycle failed
+                if should_stop() or not cycle_completed:
+                    print("[ENGINE] Exiting run loop (stop requested or cycle incomplete)")
+                    break
                 
                 if i < num_cycles - 1:
                     print(f"\n[Cycle {i+1} complete. Starting next cycle in 3s...]\n")

@@ -144,34 +144,40 @@ async def engine_loop(args):
     """Main engine loop with restart support."""
     global _restart_requested
     
+    # Initial run
+    _restart_requested.clear()
+    clear_stop_flag()
+    
+    print(f"\n[ENGINE] Starting arbitrage engine...")
+    print(f"[ENGINE] Size: ${args.size}, Entry: {args.entry}bp, Exit: {args.exit}bp")
+    print(f"[ENGINE] Mode: {'PRIME' if args.prime else 'TURBO'}, Slippage tolerance: {args.slip}bp\n")
+    
+    await run_engine(args)
+    
+    # After engine exits, wait for restart commands
     while True:
-        # Clear any previous stop flag
-        clear_stop_flag()
-        _restart_requested.clear()
+        # Engine has stopped - update UI
+        ui_state["status"] = "STOPPED"
+        ui_state["mode"] = "STOPPED"
+        emit_update()
         
-        # Run the engine
-        print(f"\n[ENGINE] Starting arbitrage engine...")
-        print(f"[ENGINE] Size: ${args.size}, Entry: {args.entry}bp, Exit: {args.exit}bp")
-        print(f"[ENGINE] Mode: {'PRIME' if args.prime else 'TURBO'}, Slippage tolerance: {args.slip}bp\n")
+        print("[ENGINE] Engine stopped. Waiting for RESTART command from UI...")
+        
+        # Block here until restart is requested
+        while not _restart_requested.is_set():
+            await asyncio.sleep(0.5)
+        
+        # Restart requested - clear flags and run again
+        print("[ENGINE] Restart signal received, starting in 2 seconds...")
+        _restart_requested.clear()
+        clear_stop_flag()
+        
+        await asyncio.sleep(2)
+        
+        print(f"\n[ENGINE] Restarting arbitrage engine...")
+        print(f"[ENGINE] Size: ${args.size}, Entry: {args.entry}bp, Exit: {args.exit}bp\n")
         
         await run_engine(args)
-        
-        # Check if we should restart
-        if _restart_requested.is_set():
-            print("[ENGINE] Restarting in 2 seconds...")
-            log_event("INFO", "Engine restarting...")
-            await asyncio.sleep(2)
-            continue
-        else:
-            # Engine stopped without restart request - wait for restart
-            print("[ENGINE] Engine stopped. Waiting for restart command...")
-            
-            # Wait for restart signal
-            while not _restart_requested.is_set():
-                await asyncio.sleep(0.5)
-            
-            print("[ENGINE] Restart signal received")
-            continue
 
 
 def main():
