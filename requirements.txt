@@ -10,9 +10,6 @@ aiohttp-cors>=0.7.0
 flask>=2.3.0
 flask-socketio>=5.3.0
 
-# Privy token auto-refresh
-playwright>=1.40.0
-
 # Hyperliquid SDK (for REST API)
 hyperliquid-python-sdk>=0.8.0
 

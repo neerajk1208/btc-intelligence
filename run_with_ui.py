@@ -95,7 +95,9 @@ def handle_ui_event(event_type: str, data: dict):
 
 def run_web_server():
     """Run Flask web server in a thread."""
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, host='0.0.0.0', port=port, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
 
 
 async def run_engine(args):
@@ -124,7 +126,9 @@ def main():
     arb_engine.set_ui_callback(handle_ui_event)
     
     # Start web server in background thread
-    print(f"\n[WEB UI] Starting at http://localhost:5000")
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    print(f"\n[WEB UI] Starting at http://localhost:{port}")
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
     
