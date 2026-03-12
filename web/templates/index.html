@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ETH Arbitrage Monitor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Monaco', 'Menlo', monospace; 
+            background: #0a0a0a; 
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { 
+            color: #00ff88; 
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        .grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 20px; 
+            margin-bottom: 20px;
+        }
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .card h2 {
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+        }
+        .big-number {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        .positive { color: #00ff88; }
+        .negative { color: #ff4444; }
+        .neutral { color: #ffaa00; }
+        .status-idle { color: #888; }
+        .status-waiting { color: #ffaa00; }
+        .status-in-position { color: #00ff88; }
+        .status-error { color: #ff4444; }
+        .row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #222;
+        }
+        .row:last-child { border-bottom: none; }
+        .label { color: #888; }
+        .value { font-weight: bold; }
+        .events {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .event {
+            padding: 10px;
+            border-bottom: 1px solid #222;
+            font-size: 13px;
+        }
+        .event-time { color: #666; margin-right: 10px; }
+        .event-type { 
+            padding: 2px 6px; 
+            border-radius: 3px; 
+            font-size: 11px;
+            margin-right: 10px;
+        }
+        .event-type.ENTRY { background: #1a4a1a; color: #00ff88; }
+        .event-type.EXIT { background: #4a1a1a; color: #ff8888; }
+        .event-type.ERROR { background: #4a1a1a; color: #ff4444; }
+        .event-type.CYCLE_COMPLETE { background: #1a1a4a; color: #8888ff; }
+        .event-type.INFO { background: #333; color: #888; }
+        .event-type.REJECTED { background: #4a3a1a; color: #ffaa00; }
+        .event-type.WARNING { background: #4a3a1a; color: #ffaa00; }
+        .pnl-card {
+            background: linear-gradient(135deg, #1a2a1a 0%, #1a1a1a 100%);
+            border-color: #2a4a2a;
+        }
+        .mode-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .mode-ENTRY { background: #1a4a1a; color: #00ff88; }
+        .mode-EXIT { background: #4a1a1a; color: #ff8888; }
+        .mode-WARMUP { background: #4a4a1a; color: #ffff00; }
+        .mode-REFRESHING_TOKEN { background: #4a3a1a; color: #ffaa00; }
+        .threshold-indicator {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .threshold-indicator.good { color: #00ff88; }
+        .threshold-indicator.waiting { color: #ffaa00; }
+        .mini-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 12px;
+        }
+        .token-status {
+            font-size: 11px;
+            color: #888;
+            margin-top: 10px;
+        }
+        .token-status.warning { color: #ffaa00; }
+        .token-status.danger { color: #ff4444; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ETH ARBITRAGE MONITOR</h1>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>Status</h2>
+                <div class="big-number" id="status">IDLE</div>
+                <span class="mode-badge mode-ENTRY" id="mode-badge">ENTRY</span>
+                <div class="token-status" id="token-status">Token: --</div>
+            </div>
+            
+            <div class="card">
+                <h2>Current Spread</h2>
+                <div class="big-number" id="spread">0.0 bps</div>
+                <div class="threshold-indicator" id="threshold-indicator">
+                    Target: -- bps
+                </div>
+                <div class="row">
+                    <span class="label">HL Price</span>
+                    <span class="value" id="hl-price">$0.00</span>
+                </div>
+                <div class="row">
+                    <span class="label">DEF Price</span>
+                    <span class="value" id="def-price">$0.00</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Position</h2>
+                <div class="row">
+                    <span class="label">In Position</span>
+                    <span class="value" id="in-position">NO</span>
+                </div>
+                <div class="row">
+                    <span class="label">Entry Spread</span>
+                    <span class="value" id="entry-spread">-</span>
+                </div>
+                <div class="row">
+                    <span class="label">Entry Time</span>
+                    <span class="value" id="entry-time">-</span>
+                </div>
+                <div class="row">
+                    <span class="label">Unrealized P&L</span>
+                    <span class="value" id="unrealized-pnl">$0.00</span>
+                </div>
+            </div>
+            
+            <div class="card pnl-card">
+                <h2>Performance</h2>
+                <div class="big-number" id="total-pnl">$0.00</div>
+                <div class="row">
+                    <span class="label">Cycles Completed</span>
+                    <span class="value" id="cycles">0</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Last Cycle Summary</h2>
+                <div class="mini-row">
+                    <span class="label">Entry → Exit</span>
+                    <span class="value" id="cycle-spreads">-- → --</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Net P&L</span>
+                    <span class="value" id="cycle-pnl">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">DEF P&L</span>
+                    <span class="value" id="cycle-def-pnl">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">HL P&L</span>
+                    <span class="value" id="cycle-hl-pnl">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Fees</span>
+                    <span class="value" id="cycle-fees">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">DEF Latency</span>
+                    <span class="value" id="cycle-def-latency">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">HL Latency</span>
+                    <span class="value" id="cycle-hl-latency">--</span>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Balances</h2>
+                <div class="row">
+                    <span class="label">Definitive (USDC)</span>
+                    <span class="value" id="def-balance">$0.00</span>
+                </div>
+                <div class="row">
+                    <span class="label">Hyperliquid (USDC)</span>
+                    <span class="value" id="hl-balance">$0.00</span>
+                </div>
+                <div class="row">
+                    <span class="label">Total</span>
+                    <span class="value" id="total-balance">$0.00</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Event Log</h2>
+            <div class="events" id="events">
+                <div class="event">
+                    <span class="event-time">--:--:--</span>
+                    <span class="event-type INFO">INFO</span>
+                    <span>Waiting for connection...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            addEvent('INFO', 'Connected to arbitrage engine');
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected');
+            document.getElementById('status').textContent = 'DISCONNECTED';
+            document.getElementById('status').className = 'big-number status-error';
+        });
+        
+        socket.on('state_update', (state) => {
+            updateUI(state);
+        });
+        
+        function updateUI(state) {
+            // Status
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = state.status;
+            statusEl.className = 'big-number status-' + state.status.toLowerCase().replace(' ', '-');
+            
+            // Mode badge
+            const modeBadge = document.getElementById('mode-badge');
+            const mode = state.mode || 'ENTRY';
+            modeBadge.textContent = mode;
+            modeBadge.className = 'mode-badge mode-' + mode;
+            
+            // Token status
+            const tokenEl = document.getElementById('token-status');
+            const tokenSec = state.token_expires_in_sec || 0;
+            if (tokenSec > 0) {
+                const tokenMin = Math.floor(tokenSec / 60);
+                tokenEl.textContent = `Token: ${tokenMin} min remaining`;
+                tokenEl.className = 'token-status' + (tokenMin < 5 ? ' danger' : tokenMin < 15 ? ' warning' : '');
+            } else {
+                tokenEl.textContent = 'Token: --';
+                tokenEl.className = 'token-status';
+            }
+            
+            // Spread with threshold indicator
+            const spread = state.current_spread_bps;
+            const spreadEl = document.getElementById('spread');
+            spreadEl.textContent = spread.toFixed(1) + ' bps';
+            
+            // Threshold indicator - show target and whether we're hitting it
+            const thresholdEl = document.getElementById('threshold-indicator');
+            const entryThresh = state.entry_threshold_bps || -3;
+            const exitThresh = state.exit_threshold_bps || 15;
+            
+            if (mode === 'ENTRY' || mode === 'WARMUP') {
+                const isGood = spread <= entryThresh;
+                thresholdEl.textContent = `Entry target: ≤ ${entryThresh} bps`;
+                thresholdEl.className = 'threshold-indicator ' + (isGood ? 'good' : 'waiting');
+                spreadEl.className = 'big-number ' + (isGood ? 'positive' : 'neutral');
+            } else if (mode === 'EXIT') {
+                const isGood = spread >= exitThresh;
+                thresholdEl.textContent = `Exit target: ≥ ${exitThresh} bps`;
+                thresholdEl.className = 'threshold-indicator ' + (isGood ? 'good' : 'waiting');
+                spreadEl.className = 'big-number ' + (isGood ? 'positive' : 'neutral');
+            } else {
+                thresholdEl.textContent = `Entry: ≤${entryThresh} | Exit: ≥${exitThresh}`;
+                thresholdEl.className = 'threshold-indicator';
+            }
+            
+            // Prices
+            document.getElementById('hl-price').textContent = '$' + state.hl_price.toFixed(2);
+            document.getElementById('def-price').textContent = '$' + state.def_price.toFixed(2);
+            
+            // Position
+            document.getElementById('in-position').textContent = state.in_position ? 'YES' : 'NO';
+            document.getElementById('in-position').className = 'value ' + (state.in_position ? 'positive' : '');
+            document.getElementById('entry-spread').textContent = state.in_position ? state.entry_spread_bps.toFixed(1) + ' bps' : '-';
+            document.getElementById('entry-time').textContent = state.entry_time || '-';
+            
+            const unrealizedEl = document.getElementById('unrealized-pnl');
+            unrealizedEl.textContent = '$' + state.unrealized_pnl.toFixed(4);
+            unrealizedEl.className = 'value ' + (state.unrealized_pnl >= 0 ? 'positive' : 'negative');
+            
+            // Performance
+            const totalPnlEl = document.getElementById('total-pnl');
+            totalPnlEl.textContent = '$' + state.total_realized_pnl.toFixed(4);
+            totalPnlEl.className = 'big-number ' + (state.total_realized_pnl >= 0 ? 'positive' : 'negative');
+            document.getElementById('cycles').textContent = state.cycles_completed;
+            
+            // Last cycle summary
+            const lastCycle = state.last_cycle || {};
+            if (lastCycle.realized_pnl !== undefined) {
+                document.getElementById('cycle-spreads').textContent = 
+                    `${(lastCycle.entry_spread || 0).toFixed(1)} → ${(lastCycle.exit_spread || 0).toFixed(1)} bps`;
+                
+                const cyclePnlEl = document.getElementById('cycle-pnl');
+                cyclePnlEl.textContent = '$' + (lastCycle.realized_pnl || 0).toFixed(4);
+                cyclePnlEl.className = 'value ' + ((lastCycle.realized_pnl || 0) >= 0 ? 'positive' : 'negative');
+                
+                const defPnlEl = document.getElementById('cycle-def-pnl');
+                defPnlEl.textContent = '$' + (lastCycle.def_pnl || 0).toFixed(4);
+                defPnlEl.className = 'value ' + ((lastCycle.def_pnl || 0) >= 0 ? 'positive' : 'negative');
+                
+                const hlPnlEl = document.getElementById('cycle-hl-pnl');
+                hlPnlEl.textContent = '$' + (lastCycle.hl_pnl || 0).toFixed(4);
+                hlPnlEl.className = 'value ' + ((lastCycle.hl_pnl || 0) >= 0 ? 'positive' : 'negative');
+                
+                document.getElementById('cycle-fees').textContent = '$' + (lastCycle.fees || 0).toFixed(4);
+                document.getElementById('cycle-def-latency').textContent = (lastCycle.def_latency_ms || 0).toFixed(0) + ' ms';
+                document.getElementById('cycle-hl-latency').textContent = (lastCycle.hl_latency_ms || 0).toFixed(0) + ' ms';
+            }
+            
+            // Balances
+            document.getElementById('def-balance').textContent = '$' + state.balances.def_usdc.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('hl-balance').textContent = '$' + state.balances.hl_usdc.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('total-balance').textContent = '$' + state.balances.total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            
+            // Events
+            if (state.events && state.events.length > 0) {
+                const eventsHtml = state.events.map(e => `
+                    <div class="event">
+                        <span class="event-time">${e.time}</span>
+                        <span class="event-type ${e.type}">${e.type}</span>
+                        <span>${e.message}</span>
+                    </div>
+                `).join('');
+                document.getElementById('events').innerHTML = eventsHtml;
+            }
+        }
+        
+        function addEvent(type, message) {
+            const eventsEl = document.getElementById('events');
+            const time = new Date().toLocaleTimeString('en-US', {hour12: false});
+            const eventHtml = `
+                <div class="event">
+                    <span class="event-time">${time}</span>
+                    <span class="event-type ${type}">${type}</span>
+                    <span>${message}</span>
+                </div>
+            `;
+            eventsEl.insertAdjacentHTML('afterbegin', eventHtml);
+        }
+    </script>
+</body>
+</html>

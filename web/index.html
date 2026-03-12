@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BTC Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-card: #21262d;
+            --border: #30363d;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --green: #3fb950;
+            --green-bg: rgba(63, 185, 80, 0.15);
+            --red: #f85149;
+            --red-bg: rgba(248, 81, 73, 0.15);
+            --yellow: #d29922;
+            --yellow-bg: rgba(210, 153, 34, 0.15);
+            --blue: #58a6ff;
+            --blue-bg: rgba(88, 166, 255, 0.15);
+            --purple: #bc8cff;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 16px;
+            padding-bottom: 100px;
+        }
+        
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+        }
+        
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #58a6ff, #bc8cff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+        
+        .header .subtitle {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Price Display */
+        .price-display {
+            text-align: center;
+            padding: 24px;
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .price-label {
+            color: var(--text-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .price-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 36px;
+            font-weight: 700;
+        }
+        
+        /* Recommendation Card */
+        .rec-card {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 2px solid var(--border);
+            transition: border-color 0.3s;
+        }
+        
+        .rec-card.buy { border-color: var(--green); background: var(--green-bg); }
+        .rec-card.sell { border-color: var(--red); background: var(--red-bg); }
+        .rec-card.wait { border-color: var(--border); }
+        .rec-card.sit-out { border-color: var(--yellow); background: var(--yellow-bg); }
+        
+        .rec-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        
+        .rec-action {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .rec-icon {
+            font-size: 28px;
+        }
+        
+        .rec-text {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        .rec-text.buy { color: var(--green); }
+        .rec-text.sell { color: var(--red); }
+        .rec-text.wait { color: var(--text-secondary); }
+        .rec-text.sit-out { color: var(--yellow); }
+        
+        .rec-urgency {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .rec-urgency.immediate { background: var(--red); color: white; }
+        .rec-urgency.soon { background: var(--yellow); color: black; }
+        .rec-urgency.neutral { background: var(--bg-card); color: var(--text-muted); }
+        
+        .rec-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .rec-detail {
+            background: var(--bg-card);
+            padding: 12px;
+            border-radius: 10px;
+        }
+        
+        .rec-detail-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .rec-detail-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .rec-reason {
+            color: var(--text-secondary);
+            font-size: 13px;
+            padding: 12px;
+            background: var(--bg-card);
+            border-radius: 10px;
+        }
+        
+        /* Position Card */
+        .position-card {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .position-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .position-title {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .position-side {
+            font-size: 14px;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
+        
+        .position-side.long { background: var(--green-bg); color: var(--green); }
+        .position-side.short { background: var(--red-bg); color: var(--red); }
+        .position-side.flat { background: var(--bg-card); color: var(--text-muted); }
+        
+        .position-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+        }
+        
+        .position-stat {
+            text-align: center;
+            padding: 8px;
+            background: var(--bg-card);
+            border-radius: 8px;
+        }
+        
+        .position-stat-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        
+        .position-stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .pnl-positive { color: var(--green); }
+        .pnl-negative { color: var(--red); }
+        
+        /* Market Info */
+        .market-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .market-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 14px;
+        }
+        
+        .market-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        
+        .market-value {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .market-sub {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        
+        .regime-choppy { color: var(--yellow); }
+        .regime-trending_up { color: var(--green); }
+        .regime-trending_down { color: var(--red); }
+        .regime-news_shock { color: var(--red); }
+        
+        .vol-low { color: var(--blue); }
+        .vol-normal { color: var(--text-primary); }
+        .vol-high { color: var(--yellow); }
+        .vol-extreme { color: var(--red); }
+        
+        /* Guards */
+        .guards-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 16px;
+        }
+        
+        .guards-title {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+        
+        .guards-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+        }
+        
+        .guard-item {
+            text-align: center;
+            padding: 8px 4px;
+            background: var(--bg-card);
+            border-radius: 8px;
+        }
+        
+        .guard-icon {
+            font-size: 18px;
+            margin-bottom: 4px;
+        }
+        
+        .guard-label {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        
+        .guard-ok .guard-icon { color: var(--green); }
+        .guard-warn .guard-icon { color: var(--yellow); }
+        .guard-alert .guard-icon { color: var(--red); }
+        
+        /* Warnings */
+        .warnings {
+            margin-bottom: 16px;
+        }
+        
+        .warning-item {
+            background: var(--yellow-bg);
+            border-left: 3px solid var(--yellow);
+            padding: 10px 12px;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: var(--yellow);
+        }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+        
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Responsive */
+        @media (max-width: 360px) {
+            .price-value { font-size: 28px; }
+            .rec-text { font-size: 20px; }
+            .rec-details { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>BTC Intelligence</h1>
+            <div class="subtitle">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </header>
+        
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <div>Connecting to Hyperliquid...</div>
+        </div>
+        
+        <div id="content" style="display: none;">
+            <!-- Price -->
+            <div class="price-display">
+                <div class="price-label">BTC Price</div>
+                <div class="price-value" id="price">$0.00</div>
+            </div>
+            
+            <!-- Recommendation -->
+            <div class="rec-card" id="rec-card">
+                <div class="rec-header">
+                    <div class="rec-action">
+                        <span class="rec-icon" id="rec-icon">⏳</span>
+                        <span class="rec-text" id="rec-action">WAIT</span>
+                    </div>
+                    <span class="rec-urgency neutral" id="rec-urgency">NEUTRAL</span>
+                </div>
+                <div class="rec-details" id="rec-details" style="display: none;">
+                    <div class="rec-detail">
+                        <div class="rec-detail-label">💰 Size</div>
+                        <div class="rec-detail-value" id="rec-size">$0</div>
+                    </div>
+                    <div class="rec-detail">
+                        <div class="rec-detail-label">📈 Entry</div>
+                        <div class="rec-detail-value" id="rec-entry">$0</div>
+                    </div>
+                    <div class="rec-detail">
+                        <div class="rec-detail-label">🛑 Stop</div>
+                        <div class="rec-detail-value" id="rec-stop">$0</div>
+                    </div>
+                    <div class="rec-detail">
+                        <div class="rec-detail-label">🎯 Target</div>
+                        <div class="rec-detail-value" id="rec-target">$0</div>
+                    </div>
+                </div>
+                <div class="rec-reason" id="rec-reason">Loading...</div>
+            </div>
+            
+            <!-- Warnings -->
+            <div class="warnings" id="warnings"></div>
+            
+            <!-- Position -->
+            <div class="position-card">
+                <div class="position-header">
+                    <span class="position-title">Position</span>
+                    <span class="position-side flat" id="pos-side">FLAT</span>
+                </div>
+                <div class="position-stats">
+                    <div class="position-stat">
+                        <div class="position-stat-label">Size</div>
+                        <div class="position-stat-value" id="pos-size">$0</div>
+                    </div>
+                    <div class="position-stat">
+                        <div class="position-stat-label">Entry</div>
+                        <div class="position-stat-value" id="pos-entry">-</div>
+                    </div>
+                    <div class="position-stat">
+                        <div class="position-stat-label">P&L</div>
+                        <div class="position-stat-value" id="pos-pnl">$0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Market Info -->
+            <div class="market-grid">
+                <div class="market-card">
+                    <div class="market-label">📍 Regime</div>
+                    <div class="market-value" id="regime">CHOPPY</div>
+                    <div class="market-sub" id="regime-sub">Mean Reversion</div>
+                </div>
+                <div class="market-card">
+                    <div class="market-label">📏 VWAP</div>
+                    <div class="market-value" id="vwap">$0</div>
+                    <div class="market-sub" id="vwap-zone">Zone: neutral</div>
+                </div>
+                <div class="market-card">
+                    <div class="market-label">🌪️ Volatility</div>
+                    <div class="market-value" id="volatility">NORMAL</div>
+                    <div class="market-sub" id="vol-atr">ATR: $0</div>
+                </div>
+                <div class="market-card">
+                    <div class="market-label">⏱️ Valid For</div>
+                    <div class="market-value" id="time-remaining">15m</div>
+                    <div class="market-sub" id="time-sub">Until expiry</div>
+                </div>
+            </div>
+            
+            <!-- Guards -->
+            <div class="guards-card">
+                <div class="guards-title">🛡️ Guards Status</div>
+                <div class="guards-grid">
+                    <div class="guard-item guard-ok" id="guard-time">
+                        <div class="guard-icon">✓</div>
+                        <div class="guard-label">Time</div>
+                    </div>
+                    <div class="guard-item guard-ok" id="guard-position">
+                        <div class="guard-icon">✓</div>
+                        <div class="guard-label">Position</div>
+                    </div>
+                    <div class="guard-item guard-ok" id="guard-loss">
+                        <div class="guard-icon">✓</div>
+                        <div class="guard-label">Loss</div>
+                    </div>
+                    <div class="guard-item guard-ok" id="guard-spike">
+                        <div class="guard-icon">✓</div>
+                        <div class="guard-label">Stable</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="footer">
+            <div id="last-update">Last update: -</div>
+        </footer>
+    </div>
+    
+    <script>
+        const actionIcons = {
+            'BUY': '🟢',
+            'SELL': '🔴',
+            'CLOSE_LONG': '📤',
+            'CLOSE_SHORT': '📥',
+            'SIT_OUT': '⏸️',
+            'WAIT': '⏳'
+        };
+        
+        const regimeStrategies = {
+            'choppy': 'Mean Reversion',
+            'trending_up': 'Buy Pullbacks',
+            'trending_down': 'Sell Rallies',
+            'news_shock': 'Sit Out'
+        };
+        
+        function formatMoney(value) {
+            return '$' + Math.round(value).toLocaleString();
+        }
+        
+        function updateUI(state) {
+            // Show content
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            document.getElementById('status-text').textContent = 'Live';
+            
+            // Price
+            document.getElementById('price').textContent = formatMoney(state.price);
+            
+            // Recommendation
+            const rec = state.recommendation;
+            const action = rec.action;
+            const card = document.getElementById('rec-card');
+            const actionEl = document.getElementById('rec-action');
+            const urgencyEl = document.getElementById('rec-urgency');
+            const detailsEl = document.getElementById('rec-details');
+            
+            // Reset classes
+            card.className = 'rec-card';
+            actionEl.className = 'rec-text';
+            urgencyEl.className = 'rec-urgency';
+            
+            // Set action
+            document.getElementById('rec-icon').textContent = actionIcons[action] || '⏳';
+            actionEl.textContent = action.replace('_', ' ');
+            
+            // Set colors
+            if (action === 'BUY' || action === 'CLOSE_SHORT') {
+                card.classList.add('buy');
+                actionEl.classList.add('buy');
+            } else if (action === 'SELL' || action === 'CLOSE_LONG') {
+                card.classList.add('sell');
+                actionEl.classList.add('sell');
+            } else if (action === 'SIT_OUT') {
+                card.classList.add('sit-out');
+                actionEl.classList.add('sit-out');
+            } else {
+                card.classList.add('wait');
+                actionEl.classList.add('wait');
+            }
+            
+            // Urgency
+            urgencyEl.textContent = rec.urgency.toUpperCase();
+            urgencyEl.classList.add(rec.urgency);
+            
+            // Details
+            if (['BUY', 'SELL', 'CLOSE_LONG', 'CLOSE_SHORT'].includes(action)) {
+                detailsEl.style.display = 'grid';
+                document.getElementById('rec-size').textContent = formatMoney(rec.size_usd);
+                document.getElementById('rec-entry').textContent = formatMoney(rec.entry_low) + '-' + formatMoney(rec.entry_high).slice(1);
+                document.getElementById('rec-stop').textContent = formatMoney(rec.stop_loss);
+                document.getElementById('rec-target').textContent = formatMoney(rec.take_profit);
+            } else {
+                detailsEl.style.display = 'none';
+            }
+            
+            document.getElementById('rec-reason').textContent = rec.reason || 'Analyzing...';
+            
+            // Warnings
+            const warningsEl = document.getElementById('warnings');
+            warningsEl.innerHTML = '';
+            if (rec.warnings && rec.warnings.length > 0) {
+                rec.warnings.forEach(w => {
+                    const div = document.createElement('div');
+                    div.className = 'warning-item';
+                    div.textContent = w;
+                    warningsEl.appendChild(div);
+                });
+            }
+            
+            // Position
+            const pos = state.position;
+            const sideEl = document.getElementById('pos-side');
+            sideEl.className = 'position-side';
+            
+            if (pos.is_flat) {
+                sideEl.textContent = 'FLAT';
+                sideEl.classList.add('flat');
+                document.getElementById('pos-size').textContent = '$0';
+                document.getElementById('pos-entry').textContent = '-';
+                document.getElementById('pos-pnl').textContent = '$0';
+                document.getElementById('pos-pnl').className = 'position-stat-value';
+            } else {
+                sideEl.textContent = pos.side.toUpperCase();
+                sideEl.classList.add(pos.side);
+                document.getElementById('pos-size').textContent = formatMoney(pos.size_usd);
+                document.getElementById('pos-entry').textContent = formatMoney(pos.entry_price);
+                
+                const pnlEl = document.getElementById('pos-pnl');
+                const pnl = pos.unrealized_pnl;
+                pnlEl.textContent = (pnl >= 0 ? '+' : '') + formatMoney(pnl);
+                pnlEl.className = 'position-stat-value ' + (pnl >= 0 ? 'pnl-positive' : 'pnl-negative');
+            }
+            
+            // Market
+            const regime = state.market.regime;
+            const regimeEl = document.getElementById('regime');
+            regimeEl.textContent = regime.toUpperCase().replace('_', ' ');
+            regimeEl.className = 'market-value regime-' + regime;
+            document.getElementById('regime-sub').textContent = regimeStrategies[regime] || '';
+            
+            // VWAP
+            document.getElementById('vwap').textContent = formatMoney(state.vwap.value);
+            document.getElementById('vwap-zone').textContent = 'Zone: ' + state.vwap.zone;
+            
+            // Volatility
+            const vol = state.volatility.regime;
+            const volEl = document.getElementById('volatility');
+            volEl.textContent = vol;
+            volEl.className = 'market-value vol-' + vol.toLowerCase();
+            document.getElementById('vol-atr').textContent = 'ATR: ' + formatMoney(state.volatility.atr);
+            
+            // Time remaining
+            const secs = rec.time_remaining;
+            const mins = Math.floor(secs / 60);
+            document.getElementById('time-remaining').textContent = mins > 0 ? mins + 'm' : Math.round(secs) + 's';
+            
+            // Guards
+            updateGuard('guard-time', !state.guards.time.paused, state.guards.time.paused ? '⏸️' : '✓');
+            updateGuard('guard-position', state.guards.position.level !== 'max', 
+                state.guards.position.level === 'max' ? '🛑' : 
+                state.guards.position.level === 'high' ? '⚠️' : '✓');
+            updateGuard('guard-loss', !state.guards.loss.paused && state.guards.loss.level !== 'warning',
+                state.guards.loss.paused ? '🛑' : 
+                state.guards.loss.level === 'warning' ? '⚠️' : '✓');
+            updateGuard('guard-spike', !state.guards.spike.paused, state.guards.spike.paused ? '⚠️' : '✓');
+            
+            // Last update
+            document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+        }
+        
+        function updateGuard(id, ok, icon) {
+            const el = document.getElementById(id);
+            el.className = 'guard-item ' + (ok ? 'guard-ok' : icon === '⚠️' ? 'guard-warn' : 'guard-alert');
+            el.querySelector('.guard-icon').textContent = icon;
+        }
+        
+        // SSE connection
+        function connect() {
+            const evtSource = new EventSource('/api/stream');
+            
+            evtSource.onmessage = function(event) {
+                try {
+                    const state = JSON.parse(event.data);
+                    updateUI(state);
+                } catch (e) {
+                    console.error('Parse error:', e);
+                }
+            };
+            
+            evtSource.onerror = function() {
+                document.getElementById('status-dot').style.background = '#f85149';
+                document.getElementById('status-text').textContent = 'Reconnecting...';
+                evtSource.close();
+                setTimeout(connect, 3000);
+            };
+        }
+        
+        // Initial fetch
+        fetch('/api/state')
+            .then(r => r.json())
+            .then(state => {
+                if (state && state.price) {
+                    updateUI(state);
+                }
+            })
+            .catch(() => {});
+        
+        // Start SSE
+        connect();
+    </script>
+</body>
+</html>

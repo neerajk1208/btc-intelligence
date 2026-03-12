@@ -1,0 +1,105 @@
+# BTC Intelligence Configuration
+# All non-secret settings go here
+
+# =============================================================================
+# TRADING PARAMETERS
+# =============================================================================
+trading:
+  base_size_usd: 20000           # Default trade size
+  max_position_usd: 30000        # Maximum exposure one direction
+  daily_loss_limit_usd: 3000     # Stop trading if daily P&L below this
+  daily_volume_target_usd: 3500000  # Target volume per day
+
+# =============================================================================
+# SIGNAL THRESHOLDS
+# =============================================================================
+signals:
+  # VWAP deviation bands
+  vwap_entry_sigma: 1.0          # Enter at ±1σ from VWAP (normal)
+  vwap_entry_sigma_trending: 0.5 # Enter at ±0.5σ when trending (pullbacks)
+  vwap_extended_sigma: 1.5       # Don't chase beyond ±1.5σ
+  
+  # Volatility thresholds (ATR relative to 7-day baseline)
+  atr_elevated_threshold: 1.2    # ATR > 1.2x = elevated volatility
+  atr_extreme_threshold: 2.0     # ATR > 2x = pause trading (news shock)
+  atr_low_threshold: 0.7         # ATR < 0.7x = compressed (good for MR)
+  
+  # Regime detection
+  structure_confirmation_count: 3  # Need 3+ HH/HL or LL/LH for trend
+  
+  # Signal strength
+  min_signal_strength: 6.0       # Minimum score (0-10) to generate action
+  strong_signal_threshold: 8.0   # Above this = can be more aggressive
+
+# =============================================================================
+# POSITION SIZING TIERS
+# =============================================================================
+sizing:
+  # Exposure thresholds (% of max_position_usd)
+  reduce_only_threshold_pct: 90  # At 90%+ exposure, only reduce
+  half_size_threshold_pct: 60    # At 60%+ exposure, half size on adds
+  normal_threshold_pct: 30       # At 30%+ exposure, normal sizing
+  
+  # Size multipliers
+  strong_signal_size_mult: 1.25  # On strong signals with low exposure
+  half_size_mult: 0.5            # When exposure > half_size_threshold
+
+# =============================================================================
+# GUARD RAILS
+# =============================================================================
+guards:
+  # News spike detection
+  news_spike_move_pct: 2.0       # If price moves > 2% in window below
+  news_spike_window_minutes: 15  # Check 15 minute window
+  news_spike_pause_minutes: 30   # Pause for 30 min after detected
+  
+  # Time regime
+  macro_events_enabled: true     # Respect scheduled macro events
+  danger_zones_enabled: true     # Respect US open danger zone
+  
+  # Position timeout
+  position_timeout_minutes: 30   # Close if no profit after 30 min
+
+# =============================================================================
+# ALERTS
+# =============================================================================
+alerts:
+  sound_enabled: true
+  sound_volume: 0.7              # 0.0 to 1.0
+  
+  telegram_enabled: false        # Set true after configuring .env
+  
+  macos_notifications_enabled: true
+
+# =============================================================================
+# DATA SOURCE
+# =============================================================================
+hyperliquid:
+  symbol: "BTC"
+  websocket_url: "wss://api.hyperliquid.xyz/ws"
+  rest_url: "https://api.hyperliquid.xyz"
+  
+  # Polling intervals (milliseconds)
+  price_poll_ms: 1000            # Price updates every 1 second
+  orderbook_poll_ms: 2000        # Order book every 2 seconds
+  funding_poll_ms: 60000         # Funding rate every 60 seconds
+
+# =============================================================================
+# TIME REGIME
+# =============================================================================
+time_regime:
+  events_file: "data/macro_events.json"
+  
+  # Danger zones (UTC hours) - US market open volatility
+  danger_zones:
+    - name: "us_open"
+      start_hour_utc: 13         # 6 AM PST (winter) / 5 AM PDT (summer)
+      end_hour_utc: 20           # 12 PM PST
+      days: [0, 1, 2, 3, 4]      # Monday-Friday
+
+# =============================================================================
+# DISPLAY
+# =============================================================================
+display:
+  refresh_rate_ms: 500           # UI refresh every 500ms
+  action_display_seconds: 300    # Show action for 5 minutes before timeout

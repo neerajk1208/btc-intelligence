@@ -1,0 +1,185 @@
+{
+  "events": [
+    {
+      "name": "Jobs Report (NFP) Mar 2026",
+      "datetime_utc": "2026-03-06T13:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PST"
+    },
+    {
+      "name": "CPI March 2026",
+      "datetime_utc": "2026-03-11T12:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PDT"
+    },
+    {
+      "name": "FOMC March 2026 (with SEP)",
+      "datetime_utc": "2026-03-18T18:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 60,
+      "type": "fomc",
+      "pst_time": "11:00 AM PDT"
+    },
+    {
+      "name": "Triple Witching Mar 2026",
+      "datetime_utc": "2026-03-20T19:00:00Z",
+      "pause_before_minutes": 60,
+      "pause_after_minutes": 30,
+      "type": "opex",
+      "pst_time": "12:00 PM PDT (market close)"
+    },
+    {
+      "name": "PCE March 2026",
+      "datetime_utc": "2026-03-27T12:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PDT"
+    },
+    {
+      "name": "Jobs Report (NFP) Apr 2026",
+      "datetime_utc": "2026-04-03T12:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PDT"
+    },
+    {
+      "name": "CPI April 2026",
+      "datetime_utc": "2026-04-10T12:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PDT"
+    },
+    {
+      "name": "Tesla Q1 Earnings (est)",
+      "datetime_utc": "2026-04-22T20:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 360,
+      "type": "earnings_mega",
+      "pst_time": "1:00 PM PDT (after close) - pause until next morning"
+    },
+    {
+      "name": "PCE April 2026",
+      "datetime_utc": "2026-04-24T12:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PDT"
+    },
+    {
+      "name": "FOMC April 2026",
+      "datetime_utc": "2026-04-29T18:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 60,
+      "type": "fomc",
+      "pst_time": "11:00 AM PDT"
+    },
+    {
+      "name": "Microsoft Q3 Earnings (est)",
+      "datetime_utc": "2026-04-29T20:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 360,
+      "type": "earnings_mega",
+      "pst_time": "1:00 PM PDT (after close) - pause until next morning"
+    },
+    {
+      "name": "Alphabet Q1 Earnings (est)",
+      "datetime_utc": "2026-04-29T20:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 360,
+      "type": "earnings_mega",
+      "pst_time": "1:00 PM PDT (after close)"
+    },
+    {
+      "name": "Apple Q2 Earnings (est)",
+      "datetime_utc": "2026-04-30T20:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 360,
+      "type": "earnings_mega",
+      "pst_time": "1:00 PM PDT (after close)"
+    },
+    {
+      "name": "Amazon Q1 Earnings (est)",
+      "datetime_utc": "2026-04-30T20:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 360,
+      "type": "earnings_mega",
+      "pst_time": "1:00 PM PDT (after close)"
+    },
+    {
+      "name": "Meta Q1 Earnings (est)",
+      "datetime_utc": "2026-04-30T20:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 360,
+      "type": "earnings_mega",
+      "pst_time": "1:00 PM PDT (after close)"
+    },
+    {
+      "name": "Jobs Report (NFP) May 2026",
+      "datetime_utc": "2026-05-01T12:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PDT"
+    },
+    {
+      "name": "AMD Q1 Earnings (est)",
+      "datetime_utc": "2026-05-05T20:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 360,
+      "type": "earnings_mega",
+      "pst_time": "1:00 PM PDT (after close)"
+    },
+    {
+      "name": "CPI May 2026",
+      "datetime_utc": "2026-05-13T12:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PDT"
+    },
+    {
+      "name": "NVIDIA Q1 Earnings (est)",
+      "datetime_utc": "2026-05-27T20:00:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 360,
+      "type": "earnings_mega",
+      "pst_time": "1:00 PM PDT (after close) - CRITICAL: pause until next morning"
+    },
+    {
+      "name": "PCE May 2026",
+      "datetime_utc": "2026-05-29T12:30:00Z",
+      "pause_before_minutes": 30,
+      "pause_after_minutes": 30,
+      "type": "economic",
+      "pst_time": "5:30 AM PDT"
+    }
+  ],
+  "last_updated": "2026-02-26",
+  "timezone_notes": {
+    "DST_2026": "Starts Mar 8, Ends Nov 1",
+    "FOMC": "2 PM ET = 19:00 UTC (winter) or 18:00 UTC (summer)",
+    "Economic_Data": "8:30 AM ET = 13:30 UTC (winter) or 12:30 UTC (summer)",
+    "Earnings_After_Close": "4 PM ET = 21:00 UTC (winter) or 20:00 UTC (summer)",
+    "PST_conversion": "PST = UTC-8 (winter), PDT = UTC-7 (summer)"
+  },
+  "pause_duration_notes": {
+    "economic": "30 min before, 30 min after (data settles quickly)",
+    "fomc": "30 min before, 60 min after (press conference causes extended volatility)",
+    "fomc_with_sep": "Same as FOMC but SEP meetings have dot plot = extra volatility",
+    "opex": "60 min before close, 30 min after (gamma hedging)",
+    "earnings_mega": "30 min before close, 360 min (6 hrs) after"
+  },
+  "event_types": {
+    "economic": "CPI, NFP (Jobs), PCE, PPI",
+    "fomc": "Federal Reserve interest rate decisions",
+    "opex": "Options expiration (Triple Witching = quarterly)",
+    "earnings_mega": "Magnificent 7 + AMD earnings (move entire NDX)"
+  }
+}
