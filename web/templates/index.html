@@ -300,6 +300,26 @@
             </div>
             
             <div class="card">
+                <h2>Today's Stats</h2>
+                <div class="mini-row">
+                    <span class="label">Cycles Today</span>
+                    <span class="value" id="stats-cycles">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Net P&L Today</span>
+                    <span class="value" id="stats-pnl">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Volume Today</span>
+                    <span class="value" id="stats-volume">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Avg Slippage</span>
+                    <span class="value" id="stats-slippage">--</span>
+                </div>
+            </div>
+            
+            <div class="card">
                 <h2>Last Cycle Summary</h2>
                 <div class="mini-row">
                     <span class="label">Entry → Exit</span>
@@ -724,6 +744,32 @@
                 tokenEl.className = 'token-status';
             }
         }, 1000);  // Update every second
+        
+        // Fetch today's stats every 30 seconds
+        async function fetchStats() {
+            try {
+                const resp = await fetch('/api/stats');
+                const stats = await resp.json();
+                
+                document.getElementById('stats-cycles').textContent = stats.cycles_today || 0;
+                
+                const pnl = stats.net_pnl_today || 0;
+                const pnlEl = document.getElementById('stats-pnl');
+                pnlEl.textContent = '$' + pnl.toFixed(4);
+                pnlEl.className = 'value ' + (pnl >= 0 ? 'positive' : 'negative');
+                
+                const vol = stats.volume_today || 0;
+                document.getElementById('stats-volume').textContent = '$' + vol.toLocaleString(undefined, {maximumFractionDigits: 0});
+                
+                const slip = stats.avg_slippage_bps || 0;
+                document.getElementById('stats-slippage').textContent = slip.toFixed(2) + ' bps';
+            } catch (e) {
+                console.error('Stats fetch error:', e);
+            }
+        }
+        
+        fetchStats();  // Initial fetch
+        setInterval(fetchStats, 30000);  // Then every 30s
     </script>
 </body>
 </html>

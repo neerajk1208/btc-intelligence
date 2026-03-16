@@ -226,6 +226,80 @@ def index():
 def get_state():
     return jsonify(ui_state)
 
+@app.route('/api/stats')
+def get_stats():
+    """Get today's running stats from Supabase."""
+    import requests
+    
+    supabase_url = os.environ.get("SUPABASE_URL", "")
+    supabase_key = os.environ.get("SUPABASE_KEY", "")
+    
+    if not supabase_url or not supabase_key:
+        return jsonify({
+            "cycles_today": 0,
+            "net_pnl_today": 0,
+            "gross_pnl_today": 0,
+            "avg_slippage_bps": 0,
+            "volume_today": 0,
+            "error": "Supabase not configured"
+        })
+    
+    try:
+        # Today's start in unix ms
+        today_start = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Query trades from today
+        resp = requests.get(
+            f"{supabase_url}/rest/v1/trades",
+            headers=headers,
+            params={
+                "select": "net_pnl,gross_pnl,slippage_bps,order_size_usd",
+                "ts": f"gte.{today_start}",
+                "side": "eq.EXIT",
+                "success": "eq.1"
+            },
+            timeout=5
+        )
+        
+        if resp.status_code != 200:
+            return jsonify({
+                "cycles_today": 0,
+                "net_pnl_today": 0,
+                "error": f"Supabase error: {resp.status_code}"
+            })
+        
+        trades = resp.json()
+        
+        cycles = len(trades)
+        net_pnl = sum(t.get("net_pnl", 0) or 0 for t in trades)
+        gross_pnl = sum(t.get("gross_pnl", 0) or 0 for t in trades)
+        volume = sum((t.get("order_size_usd", 0) or 0) * 2 for t in trades)
+        avg_slip = sum(t.get("slippage_bps", 0) or 0 for t in trades) / cycles if cycles > 0 else 0
+        
+        return jsonify({
+            "cycles_today": cycles,
+            "net_pnl_today": round(net_pnl, 4),
+            "gross_pnl_today": round(gross_pnl, 4),
+            "avg_slippage_bps": round(avg_slip, 2),
+            "volume_today": round(volume, 2)
+        })
+    except Exception as e:
+        print(f"[STATS] Error: {e}")
+        return jsonify({
+            "cycles_today": 0,
+            "net_pnl_today": 0,
+            "gross_pnl_today": 0,
+            "avg_slippage_bps": 0,
+            "volume_today": 0,
+            "error": str(e)
+        })
+
 @socketio.on('connect')
 def handle_connect():
     emit_update()

@@ -28,6 +28,8 @@ import json
 import time
 import hmac
 import hashlib
+
+from db.logger import init_logger, log_spread, log_trade, shutdown_logger
 import random
 import aiohttp
 import certifi
@@ -470,6 +472,9 @@ class ArbEngine:
         print(f"Expected fees: ~{self.ROUND_TRIP_FEES} bps round-trip")
         print(f"{'='*60}\n")
         
+        # Initialize database logger (non-blocking background thread)
+        init_logger()
+        
         # Definitive session
         ssl_ctx = ssl.create_default_context(cafile=certifi.where())
         connector = aiohttp.TCPConnector(ssl=ssl_ctx)
@@ -563,6 +568,7 @@ class ArbEngine:
         await self._stop_hl_websocket()
         if self.session:
             await self.session.close()
+        shutdown_logger()
     
     def _def_headers(self) -> Dict[str, str]:
         """Get Definitive API headers."""
@@ -1316,12 +1322,48 @@ class ArbEngine:
             notify_ui("position", {"in_position": True, "entry_spread_bps": spread_bps, "status": "IN_POSITION"})
             self._emit_latency_update()
             
+            # Log trade to DB (non-blocking)
+            log_trade(
+                cycle_id=self.cycle_count,
+                side="ENTRY",
+                expected_spread_bps=spread_bps,
+                actual_spread_bps=self._actual_entry_spread,
+                hl_price=hl_price,
+                def_price=def_price,
+                order_size_usd=self.size_usd,
+                def_fill_amount=self.def_weth_amount,
+                hl_fill_amount=self.hl_size_eth,
+                def_latency_ms=def_latency_ms,
+                hl_latency_ms=hl_latency_ms,
+                total_exec_ms=def_latency_ms + hl_latency_ms,
+                success=True
+            )
+            
             return True
         else:
             print(f"\n[ENTRY FAILED]")
             print(f"  DEF success: {def_success}, result: {def_result}")
             print(f"  HL success: {hl_success}, error: {hl_result.get('error')}")
             notify_ui("event", {"type": "ERROR", "message": f"Entry failed: DEF={def_success}, HL={hl_success}"})
+            
+            # Log failed trade to DB (non-blocking)
+            log_trade(
+                cycle_id=self.cycle_count,
+                side="ENTRY",
+                expected_spread_bps=spread_bps,
+                actual_spread_bps=0,
+                hl_price=hl_price,
+                def_price=def_price,
+                order_size_usd=self.size_usd,
+                def_fill_amount=0,
+                hl_fill_amount=0,
+                def_latency_ms=0,
+                hl_latency_ms=0,
+                total_exec_ms=0,
+                success=False,
+                error=f"DEF={def_success}, HL={hl_success}"
+            )
+            
             return False
     
     async def execute_exit(self, hl_price: float, def_price: float, spread_bps: float, usdc_before_exit: float) -> bool:
@@ -1608,6 +1650,25 @@ class ArbEngine:
             self._emit_latency_update()
             self._emit_cycle_bps()
             
+            # Log trade to DB (non-blocking)
+            log_trade(
+                cycle_id=self.cycle_count,
+                side="EXIT",
+                expected_spread_bps=spread_bps,
+                actual_spread_bps=self._actual_exit_spread,
+                hl_price=hl_price,
+                def_price=def_price,
+                order_size_usd=self.size_usd,
+                def_fill_amount=self.def_weth_amount,
+                hl_fill_amount=self.hl_size_eth,
+                def_latency_ms=def_latency_ms,
+                hl_latency_ms=hl_latency_ms,
+                total_exec_ms=def_latency_ms + hl_latency_ms,
+                success=True,
+                gross_pnl=def_pnl + hl_pnl,
+                net_pnl=net_pnl
+            )
+            
             print(f"  NET P&L: ${net_pnl:+.4f}")
             print(f"  Spread captured: {spread_bps - self.entry_spread_bps:.1f} bps")
             
@@ -1632,6 +1693,25 @@ class ArbEngine:
             print(f"  DEF success: {def_success}, result: {def_result}")
             print(f"  HL success: {hl_success}, error: {hl_result.get('error')}")
             notify_ui("event", {"type": "ERROR", "message": f"Exit failed: DEF={def_success}, HL={hl_success}"})
+            
+            # Log failed trade to DB (non-blocking)
+            log_trade(
+                cycle_id=self.cycle_count,
+                side="EXIT",
+                expected_spread_bps=spread_bps,
+                actual_spread_bps=0,
+                hl_price=hl_price,
+                def_price=def_price,
+                order_size_usd=self.size_usd,
+                def_fill_amount=0,
+                hl_fill_amount=0,
+                def_latency_ms=0,
+                hl_latency_ms=0,
+                total_exec_ms=0,
+                success=False,
+                error=f"DEF={def_success}, HL={hl_success}"
+            )
+            
             return False
     
     async def run_cycle(self) -> bool:
@@ -1745,6 +1825,10 @@ class ArbEngine:
                 
                 notify_ui("spread", {"hl_price": hl_price, "def_price": def_price, "spread_bps": spread, "status": "WAITING_ENTRY"})
                 
+                # Log spread to DB (non-blocking)
+                log_spread(hl_price, def_price, spread, "WAITING_ENTRY",
+                           self._def_quote_latency_ms, self._hl_ws_price_age_ms, self._price_gap_ms)
+                
                 if spread <= self.ENTRY_THRESHOLD_BPS:
                     # Ensure valid token before executing
                     if not await self._ensure_valid_token():
@@ -1818,6 +1902,10 @@ class ArbEngine:
                     "status": "IN_POSITION"
                 })
                 notify_ui("spread", {"hl_price": hl_price, "def_price": def_price, "spread_bps": spread, "status": "IN_POSITION"})
+                
+                # Log spread to DB (non-blocking)
+                log_spread(hl_price, def_price, spread, "IN_POSITION",
+                           self._def_quote_latency_ms, self._hl_ws_price_age_ms, self._price_gap_ms)
                 
                 if spread >= self.EXIT_THRESHOLD_BPS:
                     # Ensure valid token before executing
