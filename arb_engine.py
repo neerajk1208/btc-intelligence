@@ -496,8 +496,17 @@ class ArbEngine:
         
         print("[OK] Connected to Definitive and Hyperliquid\n")
         
-        # Emit initial token status
-        self._load_tokens_from_file()
+        # Token loading priority: ENV VARS first, file as fallback only
+        # Railway env vars are set at deploy time and should take priority
+        if self.privy_token:
+            # Already have token from env vars - use it, just decode expiry
+            self._token_valid_until = self._decode_jwt_exp(self.privy_token)
+            print(f"[TOKEN] Using token from env vars")
+        else:
+            # No env var token - try loading from file as fallback
+            self._load_tokens_from_file()
+            print(f"[TOKEN] Loaded token from file (no env var set)")
+        
         token_remaining = max(0, self._token_valid_until - time.time())
         notify_ui("token_status", {"expires_in_sec": token_remaining, "expires_at": self._token_valid_until, "refreshing": False})
         print(f"[TOKEN] Initial token expires in {token_remaining/60:.0f} min")
