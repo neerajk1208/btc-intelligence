@@ -363,7 +363,11 @@
                     <span class="label">HL Price Age</span>
                     <span class="value" id="lat-hl-age">-- ms</span>
                 </div>
-                <div class="mini-row">
+                <div class="mini-row" style="border-top: 1px solid #333; padding-top: 8px; margin-top: 4px;">
+                    <span class="label"><strong>Price Gap</strong></span>
+                    <span class="value" id="lat-price-gap">-- ms</span>
+                </div>
+                <div class="mini-row" style="border-top: 1px solid #333; padding-top: 8px; margin-top: 4px;">
                     <span class="label">DEF Exec</span>
                     <span class="value" id="lat-def-exec">-- ms</span>
                 </div>
@@ -584,6 +588,13 @@
             if (state.latency) {
                 document.getElementById('lat-def-quote').textContent = (state.latency.def_quote_ms || 0).toFixed(0) + ' ms';
                 document.getElementById('lat-hl-age').textContent = (state.latency.hl_ws_age_ms || 0).toFixed(0) + ' ms';
+                
+                // Price gap - highlight if too high
+                const gapEl = document.getElementById('lat-price-gap');
+                const gap = state.latency.price_gap_ms || 0;
+                gapEl.textContent = gap.toFixed(0) + ' ms';
+                gapEl.style.color = gap < 100 ? '#00ff88' : gap < 500 ? '#ffaa00' : '#ff4444';
+                
                 document.getElementById('lat-def-exec').textContent = (state.latency.def_exec_ms || 0).toFixed(0) + ' ms';
                 document.getElementById('lat-hl-exec').textContent = (state.latency.hl_exec_ms || 0).toFixed(0) + ' ms';
             }

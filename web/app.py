@@ -77,6 +77,7 @@ ui_state = {
     "latency": {
         "def_quote_ms": 0,
         "hl_ws_age_ms": 0,
+        "price_gap_ms": 0,
         "def_exec_ms": 0,
         "hl_exec_ms": 0
     },

@@ -104,6 +104,7 @@ def handle_ui_event(event_type: str, data: dict):
     elif event_type == "latency":
         ui_state["latency"]["def_quote_ms"] = data.get("def_quote_ms", 0)
         ui_state["latency"]["hl_ws_age_ms"] = data.get("hl_ws_age_ms", 0)
+        ui_state["latency"]["price_gap_ms"] = data.get("price_gap_ms", 0)
         ui_state["latency"]["def_exec_ms"] = data.get("def_exec_ms", 0)
         ui_state["latency"]["hl_exec_ms"] = data.get("hl_exec_ms", 0)
         emit_update()

@@ -198,6 +198,7 @@ class ArbEngine:
         # Latency tracking (per-cycle)
         self._def_quote_latency_ms: float = 0.0
         self._hl_ws_price_age_ms: float = 0.0
+        self._price_gap_ms: float = 0.0  # Time between DEF response and HL price capture
         self._def_exec_latency_ms: float = 0.0
         self._hl_exec_latency_ms: float = 0.0
         
@@ -476,6 +477,17 @@ class ArbEngine:
             print("[WARNING] HL WebSocket failed, falling back to REST")
         
         print("[OK] Connected to Definitive and Hyperliquid\n")
+        
+        # Emit initial token status
+        self._load_tokens_from_file()
+        token_remaining = max(0, self._token_valid_until - time.time())
+        notify_ui("token_status", {"expires_in_sec": token_remaining, "refreshing": False})
+        print(f"[TOKEN] Initial token expires in {token_remaining/60:.0f} min")
+        
+        # Emit initial service health
+        self._service_health["hl_websocket"] = "healthy" if self._hl_ws_connected else "fallback"
+        self._emit_service_health()
+        
         return True
     
     async def close(self):
@@ -569,6 +581,9 @@ class ArbEngine:
         # Store latency metrics
         self._def_quote_latency_ms = prime_latency
         self._hl_ws_price_age_ms = price_age_ms
+        # Price gap: HL price age when we grab it right after DEF returns
+        # This shows how synchronized the prices are
+        self._price_gap_ms = price_age_ms
         
         # Update service health based on results
         self._service_health["def_api"] = "healthy" if def_price else "error"
@@ -659,6 +674,7 @@ class ArbEngine:
         # Store latency metrics (exit prices)
         self._def_quote_latency_ms = prime_latency
         self._hl_ws_price_age_ms = price_age_ms
+        self._price_gap_ms = price_age_ms  # HL price age when grabbed right after DEF
         
         # Token cadence check (no latency impact)
         self._check_token_cadence()
@@ -803,6 +819,7 @@ class ArbEngine:
         notify_ui("latency", {
             "def_quote_ms": self._def_quote_latency_ms,
             "hl_ws_age_ms": self._hl_ws_price_age_ms,
+            "price_gap_ms": self._price_gap_ms,
             "def_exec_ms": self._def_exec_latency_ms,
             "hl_exec_ms": self._hl_exec_latency_ms
         })
@@ -898,11 +915,12 @@ class ArbEngine:
             print(f"[HL] Balance error: {e}")
         return 0.0
     
-    async def execute_entry(self, hl_price: float, def_price: float, spread_bps: float, usdc_before: float) -> bool:
+    async def execute_entry(self, hl_price: float, def_price: float, spread_bps: float, usdc_before: float, weth_before: float = 0.0) -> bool:
         """Execute entry trades on both platforms.
         
         Args:
             usdc_before: Cached USDC balance from start of cycle (no API call here)
+            weth_before: Cached WETH balance from start of cycle (to calculate delta)
         """
         import time
         
@@ -1085,11 +1103,12 @@ class ArbEngine:
                 print(f"[ERROR] HL order not filled properly: {hl_result}")
                 return False
             
-            # Poll for DEF settlement (WETH must appear in balance)
-            print(f"[WAITING] Confirming DEF settlement...")
+            # Poll for DEF settlement (WETH must increase from weth_before)
+            print(f"[WAITING] Confirming DEF settlement... (weth_before: {weth_before:.6f})")
             max_wait = 15
             poll_interval = 1
             waited = 0
+            weth_total = weth_before
             weth_received = 0
             weth_raw = "0"
             usdc_after = usdc_before
@@ -1097,13 +1116,14 @@ class ArbEngine:
             while waited < max_wait:
                 await asyncio.sleep(poll_interval)
                 waited += poll_interval
-                weth_received = await self.get_def_weth_balance()
+                weth_total = await self.get_def_weth_balance()
+                weth_received = weth_total - weth_before  # DELTA, not total
                 if weth_received > 0.0001:
                     weth_raw = await self.get_def_weth_balance_raw()
                     usdc_after = await self.get_def_balance()
-                    print(f"[CONFIRMED] DEF settled after {waited}s - WETH: {weth_received:.6f}")
+                    print(f"[CONFIRMED] DEF settled after {waited}s - WETH received: {weth_received:.6f} (total: {weth_total:.6f})")
                     break
-                print(f"  ... waiting ({waited}s) - WETH: {weth_received:.6f}")
+                print(f"  ... waiting ({waited}s) - WETH delta: {weth_received:.6f}")
             
             if weth_received < 0.0001:
                 print(f"[ERROR] DEF order did not settle after {max_wait}s!")
@@ -1496,10 +1516,11 @@ class ArbEngine:
         print(f"[DEBUG] Token expires in {token_remaining:.0f}s")
         notify_ui("token_status", {"expires_in_sec": token_remaining, "refreshing": False})
         
-        # Get balance ONCE at start of cycle (cached for entry execution)
-        print(f"[DEBUG] Fetching DEF balance...")
+        # Get balances ONCE at start of cycle (cached for entry execution)
+        print(f"[DEBUG] Fetching DEF balances...")
         cached_usdc_before = await self.get_def_balance()
-        print(f"[CYCLE START] Cached DEF USDC balance: ${cached_usdc_before:,.2f}")
+        cached_weth_before = await self.get_def_weth_balance()
+        print(f"[CYCLE START] Cached DEF USDC: ${cached_usdc_before:,.2f}, WETH: {cached_weth_before:.6f}")
         
         # DETECT EXISTING POSITIONS - resume if we have open positions
         if not self.in_position:
@@ -1563,14 +1584,15 @@ class ArbEngine:
                     print(f"\n{now} | HL: ${hl_price:.2f} | DEF: ${def_price:.2f} | Spread: {spread:+.1f}bp >>> ENTRY")
                     notify_ui("event", {"type": "ENTRY", "message": f"Entry signal at {spread:+.1f} bps"})
                     
-                    if await self.execute_entry(hl_price, def_price, spread, cached_usdc_before):
+                    if await self.execute_entry(hl_price, def_price, spread, cached_usdc_before, cached_weth_before):
                         # POST-ENTRY CONFIRMATION: Hold until positions verified
                         if not await self._confirm_entry_positions():
                             notify_ui("event", {"type": "ERROR", "message": "Entry confirmation failed - position mismatch!"})
                             # Continue anyway but with warning logged
                         
                         cached_usdc_before = await self.get_def_balance()
-                        print(f"[POST-ENTRY] Updated DEF USDC balance: ${cached_usdc_before:,.2f}")
+                        cached_weth_before = await self.get_def_weth_balance()
+                        print(f"[POST-ENTRY] Updated DEF USDC: ${cached_usdc_before:,.2f}, WETH: {cached_weth_before:.6f}")
                         break
                 else:
                     print(f"{now} | HL: ${hl_price:.2f} | DEF: ${def_price:.2f} | Spread: {spread:+.1f}bp | waiting for <={self.ENTRY_THRESHOLD_BPS}bp")
