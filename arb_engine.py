@@ -58,6 +58,20 @@ def should_stop() -> bool:
         return _stop_check()
     return False
 
+# Global pause flag for consecutive failures
+_is_paused = False
+_pause_reason = ""
+
+def get_pause_status() -> tuple:
+    """Get current pause status and reason."""
+    return _is_paused, _pause_reason
+
+def set_pause_status(paused: bool, reason: str = ""):
+    """Set pause status."""
+    global _is_paused, _pause_reason
+    _is_paused = paused
+    _pause_reason = reason
+
 def set_ui_callback(callback: Callable):
     """Set callback for UI updates."""
     global ui_callback
@@ -224,6 +238,10 @@ class ArbEngine:
         # Token check cadence (separate from refresh buffer)
         self._token_cadence_interval = 60  # Check display every 60 seconds
         self._last_token_cadence_check = 0
+        
+        # Consecutive failure tracking
+        self._consecutive_def_failures = 0
+        self._max_consecutive_failures = 3  # Pause after 3 consecutive failures
     
     async def _on_hl_ws_message(self, data: Dict[str, Any]) -> None:
         """Handle HL WebSocket messages - update latest ETH price."""
@@ -481,7 +499,7 @@ class ArbEngine:
         # Emit initial token status
         self._load_tokens_from_file()
         token_remaining = max(0, self._token_valid_until - time.time())
-        notify_ui("token_status", {"expires_in_sec": token_remaining, "refreshing": False})
+        notify_ui("token_status", {"expires_in_sec": token_remaining, "expires_at": self._token_valid_until, "refreshing": False})
         print(f"[TOKEN] Initial token expires in {token_remaining/60:.0f} min")
         
         # Emit initial service health
@@ -585,6 +603,13 @@ class ArbEngine:
         # This shows how synchronized the prices are
         self._price_gap_ms = price_age_ms
         
+        # Track consecutive DEF failures
+        if def_price is None or def_price == 0:
+            self._consecutive_def_failures += 1
+            print(f"[DEF] Quote failed ({self._consecutive_def_failures}/{self._max_consecutive_failures} consecutive)")
+        else:
+            self._consecutive_def_failures = 0  # Reset on success
+        
         # Update service health based on results
         self._service_health["def_api"] = "healthy" if def_price else "error"
         self._service_health["def_auth"] = "healthy" if def_price else "error"
@@ -675,6 +700,13 @@ class ArbEngine:
         self._def_quote_latency_ms = prime_latency
         self._hl_ws_price_age_ms = price_age_ms
         self._price_gap_ms = price_age_ms  # HL price age when grabbed right after DEF
+        
+        # Track consecutive DEF failures
+        if def_price is None or def_price == 0:
+            self._consecutive_def_failures += 1
+            print(f"[DEF] SELL quote failed ({self._consecutive_def_failures}/{self._max_consecutive_failures} consecutive)")
+        else:
+            self._consecutive_def_failures = 0  # Reset on success
         
         # Token cadence check (no latency impact)
         self._check_token_cadence()
@@ -852,6 +884,7 @@ class ArbEngine:
             expires_in = max(0, self._token_valid_until - now)
             notify_ui("token_checked", {
                 "expires_in_sec": expires_in,
+                "expires_at": self._token_valid_until,  # Send timestamp so UI can count down locally
                 "last_checked_at": now
             })
     
@@ -1640,6 +1673,16 @@ class ArbEngine:
             # Get synchronized prices (BUY quote for entry)
             hl_price, def_price = await self.get_prices()
             
+            # Check for consecutive DEF failures (likely token expired) - PAUSE and STOP
+            if self._consecutive_def_failures >= self._max_consecutive_failures:
+                print(f"\n[PAUSE] {self._consecutive_def_failures} consecutive DEF quote failures - token likely expired")
+                print(f"[PAUSE] ENGINE PAUSED. Manual restart required after fixing token.")
+                notify_ui("event", {"type": "ERROR", "message": f"PAUSED: {self._consecutive_def_failures} consecutive DEF failures - check token"})
+                set_pause_status(True, "DEF quote failures - token likely expired")
+                notify_ui("status", {"status": "PAUSED", "mode": "PAUSED", "pause_reason": "DEF quote failures - token likely expired"})
+                self._emit_service_health()
+                return False  # Stop completely - no retry loop
+            
             if hl_price and def_price:
                 spread = self.calc_spread(hl_price, def_price)
                 now = datetime.now().strftime("%H:%M:%S")
@@ -1687,6 +1730,17 @@ class ArbEngine:
             
             # Use SELL quote for exit spread detection (get valid quoteId for exit)
             hl_price, def_price = await self.get_exit_prices(self.def_weth_amount_raw)
+            
+            # Check for consecutive DEF failures (likely token expired) - CRITICAL during position hold
+            if self._consecutive_def_failures >= self._max_consecutive_failures:
+                print(f"\n[PAUSE] {self._consecutive_def_failures} consecutive DEF quote failures - token likely expired")
+                print(f"[PAUSE] WARNING: POSITION STILL OPEN! WETH: {self.def_weth_amount:.4f}, HL short: {self.hl_size_eth:.4f}")
+                print(f"[PAUSE] ENGINE PAUSED. Manual restart required after fixing token.")
+                notify_ui("event", {"type": "ERROR", "message": f"PAUSED: {self._consecutive_def_failures} DEF failures - OPEN POSITION - check token"})
+                set_pause_status(True, "DEF quote failures - token likely expired - POSITION OPEN")
+                notify_ui("status", {"status": "PAUSED", "mode": "PAUSED", "pause_reason": "DEF quote failures - POSITION OPEN"})
+                self._emit_service_health()
+                return False  # Stop completely - no retry loop
             
             if hl_price and def_price:
                 spread = self.calc_spread(hl_price, def_price)

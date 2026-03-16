@@ -161,6 +161,18 @@
         .mode-STOPPED { background: #4a1a1a; color: #ff4444; }
         .status-halted { color: #ff0000; font-weight: bold; }
         .mode-HALTED { background: #ff0000; color: #ffffff; animation: blink 1s infinite; }
+        .status-paused { color: #ff8800; font-weight: bold; }
+        .mode-PAUSED { background: #ff8800; color: #ffffff; animation: blink 1s infinite; }
+        .pause-reason {
+            background: #ff8800;
+            color: #ffffff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 8px 0;
+            font-size: 12px;
+            font-weight: bold;
+            text-align: center;
+        }
         @keyframes blink {
             0%, 50% { opacity: 1; }
             51%, 100% { opacity: 0.5; }
@@ -232,12 +244,13 @@
         <div class="grid">
             <div class="card">
                 <h2>Status</h2>
-                <div class="big-number" id="status">IDLE</div>
-                <span class="mode-badge mode-ENTRY" id="mode-badge">ENTRY</span>
+                <div class="big-number" id="status">STOPPED</div>
+                <span class="mode-badge mode-STOPPED" id="mode-badge">STOPPED</span>
+                <div class="pause-reason" id="pause-reason" style="display: none;"></div>
                 <div class="token-status" id="token-status">Token: --</div>
                 <div class="control-buttons">
-                    <button class="btn btn-stop" id="btn-stop" onclick="stopEngine()">⏹ STOP</button>
-                    <button class="btn btn-restart" id="btn-restart" onclick="restartEngine()">🔄 RESTART</button>
+                    <button class="btn btn-stop" id="btn-stop" onclick="stopEngine()" disabled>⏹ STOP</button>
+                    <button class="btn btn-restart" id="btn-restart" onclick="restartEngine()">▶ START</button>
                 </div>
             </div>
             
@@ -458,30 +471,37 @@
             modeBadge.textContent = mode;
             modeBadge.className = 'mode-badge mode-' + mode;
             
+            // Show pause reason if paused
+            const pauseReasonEl = document.getElementById('pause-reason');
+            if (state.is_paused && state.pause_reason) {
+                modeBadge.title = state.pause_reason;
+                pauseReasonEl.textContent = state.pause_reason;
+                pauseReasonEl.style.display = 'block';
+            } else {
+                modeBadge.title = '';
+                pauseReasonEl.style.display = 'none';
+            }
+            
             // Update button states based on mode
             const stopBtn = document.getElementById('btn-stop');
             const restartBtn = document.getElementById('btn-restart');
-            if (mode === 'STOPPED') {
+            if (mode === 'STOPPED' || mode === 'PAUSED') {
                 stopBtn.disabled = true;
                 restartBtn.disabled = false;
+                // Show START if never ran, RESTART otherwise
+                restartBtn.textContent = state.cycles_completed > 0 ? '🔄 RESTART' : '▶ START';
             } else if (mode === 'RESTARTING' || state.status === 'RESTARTING...') {
                 stopBtn.disabled = true;
                 restartBtn.disabled = true;
             } else {
                 stopBtn.disabled = false;
                 restartBtn.disabled = false;
+                restartBtn.textContent = '🔄 RESTART';
             }
             
-            // Token status
-            const tokenEl = document.getElementById('token-status');
-            const tokenSec = state.token_expires_in_sec || 0;
-            if (tokenSec > 0) {
-                const tokenMin = Math.floor(tokenSec / 60);
-                tokenEl.textContent = `Token: ${tokenMin} min remaining`;
-                tokenEl.className = 'token-status' + (tokenMin < 5 ? ' danger' : tokenMin < 15 ? ' warning' : '');
-            } else {
-                tokenEl.textContent = 'Token: --';
-                tokenEl.className = 'token-status';
+            // Token status - store expires_at for local countdown
+            if (state.token_expires_at && state.token_expires_at > 0) {
+                window.tokenExpiresAt = state.token_expires_at;
             }
             
             // Spread with threshold indicator
@@ -673,6 +693,37 @@
                 addEvent('INFO', 'Restart command sent...');
             }
         }
+        
+        // Token countdown - updates every second locally (no API calls)
+        window.tokenExpiresAt = 0;
+        setInterval(() => {
+            const tokenEl = document.getElementById('token-status');
+            if (window.tokenExpiresAt > 0) {
+                const now = Date.now() / 1000;  // Convert to Unix timestamp
+                const remaining = Math.max(0, window.tokenExpiresAt - now);
+                
+                if (remaining > 0) {
+                    const min = Math.floor(remaining / 60);
+                    const sec = Math.floor(remaining % 60);
+                    tokenEl.textContent = `Token: ${min}m ${sec.toString().padStart(2, '0')}s`;
+                    
+                    // Color based on time remaining
+                    if (min < 5) {
+                        tokenEl.className = 'token-status danger';
+                    } else if (min < 15) {
+                        tokenEl.className = 'token-status warning';
+                    } else {
+                        tokenEl.className = 'token-status';
+                    }
+                } else {
+                    tokenEl.textContent = 'Token: EXPIRED';
+                    tokenEl.className = 'token-status danger';
+                }
+            } else {
+                tokenEl.textContent = 'Token: --';
+                tokenEl.className = 'token-status';
+            }
+        }, 1000);  // Update every second
     </script>
 </body>
 </html>

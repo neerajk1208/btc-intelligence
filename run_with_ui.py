@@ -93,6 +93,7 @@ def handle_ui_event(event_type: str, data: dict):
     
     elif event_type == "token_status":
         ui_state["token_expires_in_sec"] = data.get("expires_in_sec", 0)
+        ui_state["token_expires_at"] = data.get("expires_at", 0)
         if data.get("refreshing", False):
             ui_state["mode"] = "REFRESHING_TOKEN"
             ui_state["status"] = "REFRESHING TOKEN"
@@ -142,7 +143,21 @@ def handle_ui_event(event_type: str, data: dict):
     
     elif event_type == "token_checked":
         ui_state["token_expires_in_sec"] = data.get("expires_in_sec", 0)
+        ui_state["token_expires_at"] = data.get("expires_at", 0)
         ui_state["token_last_checked"] = data.get("last_checked_at", None)
+        emit_update()
+    
+    elif event_type == "status":
+        if "status" in data:
+            ui_state["status"] = data["status"]
+        if "mode" in data:
+            ui_state["mode"] = data["mode"]
+        if "pause_reason" in data:
+            ui_state["is_paused"] = True
+            ui_state["pause_reason"] = data["pause_reason"]
+        else:
+            ui_state["is_paused"] = False
+            ui_state["pause_reason"] = None
         emit_update()
 
 
@@ -189,29 +204,44 @@ def request_restart():
 
 
 async def engine_loop(args):
-    """Main engine loop with restart support."""
+    """Main engine loop with restart support. Does NOT auto-start - waits for START button."""
     global _restart_requested
     
-    # Initial run
+    # DO NOT auto-start - wait for user to hit START/RESTART button
     _restart_requested.clear()
-    clear_stop_flag()
     
-    # Determine size display
-    min_size = getattr(args, 'min_size', None)
-    max_size = getattr(args, 'max_size', None)
-    if min_size and max_size:
-        size_str = f"${min_size}-${max_size} (random)"
-    else:
-        size_str = f"${args.size}"
+    # Set initial UI state to STOPPED
+    ui_state["status"] = "STOPPED"
+    ui_state["mode"] = "STOPPED"
+    emit_update()
     
-    print(f"\n[ENGINE] Starting arbitrage engine...")
-    print(f"[ENGINE] Size: {size_str}, Entry: {args.entry}bp, Exit: {args.exit}bp")
-    print(f"[ENGINE] Mode: {'PRIME' if args.prime else 'TURBO'}, Slippage tolerance: {args.slip}bp\n")
+    print(f"\n[ENGINE] Engine ready but NOT started. Press START in UI to begin.")
+    print(f"[ENGINE] Waiting for START command from UI...")
     
-    await run_engine(args)
+    # Wait for START button
+    while not _restart_requested.is_set():
+        await asyncio.sleep(0.5)
     
-    # After engine exits, wait for restart commands
+    # Main engine loop
     while True:
+        # Clear flags and run
+        _restart_requested.clear()
+        clear_stop_flag()
+        
+        # Determine size display
+        min_size = getattr(args, 'min_size', None)
+        max_size = getattr(args, 'max_size', None)
+        if min_size and max_size:
+            size_str = f"${min_size}-${max_size} (random)"
+        else:
+            size_str = f"${args.size}"
+        
+        print(f"\n[ENGINE] Starting arbitrage engine...")
+        print(f"[ENGINE] Size: {size_str}, Entry: {args.entry}bp, Exit: {args.exit}bp")
+        print(f"[ENGINE] Mode: {'PRIME' if args.prime else 'TURBO'}, Slippage tolerance: {args.slip}bp\n")
+        
+        await run_engine(args)
+        
         # Engine has stopped - update UI
         ui_state["status"] = "STOPPED"
         ui_state["mode"] = "STOPPED"
@@ -223,25 +253,9 @@ async def engine_loop(args):
         while not _restart_requested.is_set():
             await asyncio.sleep(0.5)
         
-        # Restart requested - clear flags and run again
+        # Restart requested
         print("[ENGINE] Restart signal received, starting in 2 seconds...")
-        _restart_requested.clear()
-        clear_stop_flag()
-        
         await asyncio.sleep(2)
-        
-        # Determine size display for restart
-        min_size = getattr(args, 'min_size', None)
-        max_size = getattr(args, 'max_size', None)
-        if min_size and max_size:
-            size_str = f"${min_size}-${max_size} (random)"
-        else:
-            size_str = f"${args.size}"
-        
-        print(f"\n[ENGINE] Restarting arbitrage engine...")
-        print(f"[ENGINE] Size: {size_str}, Entry: {args.entry}bp, Exit: {args.exit}bp\n")
-        
-        await run_engine(args)
 
 
 def main():

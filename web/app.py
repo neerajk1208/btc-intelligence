@@ -35,8 +35,8 @@ def clear_stop_flag():
 
 # Global state for UI
 ui_state = {
-    "status": "IDLE",
-    "mode": "ENTRY",  # ENTRY, EXIT, WARMUP, REFRESHING_TOKEN, STOPPED
+    "status": "STOPPED",
+    "mode": "STOPPED",  # ENTRY, EXIT, WARMUP, REFRESHING_TOKEN, STOPPED, PAUSED
     "current_spread_bps": 0,
     "hl_price": 0,
     "def_price": 0,
@@ -70,6 +70,7 @@ ui_state = {
     },
     # Token status
     "token_expires_in_sec": 0,
+    "token_expires_at": 0,
     "token_last_checked": None,
     "warmup_remaining_sec": 0,
     
@@ -104,7 +105,11 @@ ui_state = {
     # Position confirmation
     "position_confirmed": False,
     "position_mismatch": False,
-    "position_mismatch_detail": None
+    "position_mismatch_detail": None,
+    
+    # Pause state
+    "is_paused": False,
+    "pause_reason": None
 }
 
 def emit_update():
