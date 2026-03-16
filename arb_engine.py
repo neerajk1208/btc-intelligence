@@ -1250,6 +1250,29 @@ class ArbEngine:
             traceback.print_exc()
             return False
         
+        # CRITICAL: Handle partial fills - one leg succeeded, other failed
+        if hl_success and not def_success:
+            # HL SHORT OPENED BUT DEF FAILED - UNHEDGED POSITION!
+            print(f"\n[CRITICAL] HL SHORT OPENED BUT DEF FAILED!")
+            print(f"  HL result: {hl_result}")
+            print(f"  DEF result: {def_result}")
+            print(f"[HALT] UNHEDGED POSITION - Manual intervention required!")
+            notify_ui("event", {"type": "ERROR", "message": "CRITICAL: HL short opened but DEF failed - UNHEDGED!"})
+            set_pause_status(True, "UNHEDGED: HL short opened but DEF failed")
+            notify_ui("status", {"status": "HALTED", "mode": "HALTED", "pause_reason": "UNHEDGED: HL short opened but DEF failed"})
+            return False
+        
+        if def_success and not hl_success:
+            # DEF BOUGHT BUT HL FAILED - UNHEDGED POSITION!
+            print(f"\n[CRITICAL] DEF BOUGHT BUT HL SHORT FAILED!")
+            print(f"  DEF result: {def_result}")
+            print(f"  HL result: {hl_result}")
+            print(f"[HALT] UNHEDGED POSITION - Manual intervention required!")
+            notify_ui("event", {"type": "ERROR", "message": "CRITICAL: DEF bought but HL short failed - UNHEDGED!"})
+            set_pause_status(True, "UNHEDGED: DEF bought but HL short failed")
+            notify_ui("status", {"status": "HALTED", "mode": "HALTED", "pause_reason": "UNHEDGED: DEF bought but HL short failed"})
+            return False
+        
         if def_success and hl_success:
             # HL is confirmed filled from response
             hl_fill_price = hl_result.get("fill_price")
@@ -1877,7 +1900,9 @@ class ArbEngine:
                     print(f"\n{now} | HL: ${hl_price:.2f} | DEF: ${def_price:.2f} | Spread: {spread:+.1f}bp >>> ENTRY")
                     notify_ui("event", {"type": "ENTRY", "message": f"Entry signal at {spread:+.1f} bps"})
                     
-                    if await self.execute_entry(hl_price, def_price, spread, cached_usdc_before, cached_weth_before):
+                    entry_result = await self.execute_entry(hl_price, def_price, spread, cached_usdc_before, cached_weth_before)
+                    
+                    if entry_result:
                         # POST-ENTRY CONFIRMATION: Hold until positions verified
                         if not await self._confirm_entry_positions():
                             print(f"[PAUSE] Entry confirmation failed - position mismatch!")
@@ -1890,6 +1915,25 @@ class ArbEngine:
                         cached_weth_before = await self.get_def_weth_balance()
                         print(f"[POST-ENTRY] Updated DEF USDC: ${cached_usdc_before:,.2f}, WETH: {cached_weth_before:.6f}")
                         break
+                    else:
+                        # Entry failed - check if we have unhedged position (partial fill)
+                        print(f"[WARN] Entry execution failed - checking for partial fills...")
+                        await asyncio.sleep(2)  # Wait for settlement
+                        def_weth = await self.get_def_weth_balance()
+                        hl_pos = await self.hl_trader.get_position()
+                        hl_size = abs(hl_pos.get("size", 0))
+                        
+                        if def_weth > 0.0001 or hl_size > 0.0001:
+                            # Partial fill detected - HALT
+                            print(f"[HALT] Partial fill detected! DEF WETH: {def_weth:.6f}, HL short: {hl_size:.6f}")
+                            notify_ui("event", {"type": "ERROR", "message": f"HALT: Partial fill - DEF: {def_weth:.6f}, HL: {hl_size:.6f}"})
+                            set_pause_status(True, f"Partial fill: DEF {def_weth:.6f}, HL {hl_size:.6f}")
+                            notify_ui("status", {"status": "HALTED", "mode": "HALTED", "pause_reason": f"Partial fill: DEF {def_weth:.6f}, HL {hl_size:.6f}"})
+                            return False
+                        else:
+                            # Both failed cleanly - continue price checks
+                            print(f"[INFO] Entry failed cleanly (no partial fill) - continuing price checks...")
+                            notify_ui("event", {"type": "WARNING", "message": "Entry failed, continuing price checks..."})
                 else:
                     print(f"{now} | HL: ${hl_price:.2f} | DEF: ${def_price:.2f} | Spread: {spread:+.1f}bp | waiting for <={self.ENTRY_THRESHOLD_BPS}bp")
             else:
