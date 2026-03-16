@@ -502,6 +502,47 @@ class ArbEngine:
         notify_ui("token_status", {"expires_in_sec": token_remaining, "expires_at": self._token_valid_until, "refreshing": False})
         print(f"[TOKEN] Initial token expires in {token_remaining/60:.0f} min")
         
+        # STARTUP VALIDATION: Test DEF API with a single quote request
+        print("[STARTUP] Testing DEF API with quote request...")
+        try:
+            test_payload = {
+                "from": self.USDC_BASE,
+                "to": self.WETH_BASE,
+                "chain": "base",
+                "toChain": "base",
+                "qty": "100",
+                "orderSide": "buy",
+                "type": "market",
+                "degenMode": False,
+                "executionPreference": 2,
+            }
+            async with self.session.post(
+                "https://api.definitive.fi/v1/orders/quote",
+                json=test_payload,
+                headers=self._def_headers()
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("quoteId"):
+                        print(f"[STARTUP] DEF API OK - got quote")
+                        self._service_health["def_api"] = "healthy"
+                        self._service_health["def_auth"] = "healthy"
+                    else:
+                        print(f"[STARTUP] DEF API returned no quoteId - token may be invalid")
+                        notify_ui("event", {"type": "ERROR", "message": "STARTUP FAILED: DEF API returned no quote"})
+                        return False
+                else:
+                    text = await resp.text()
+                    print(f"[STARTUP] DEF API failed: {resp.status} - {text[:200]}")
+                    notify_ui("event", {"type": "ERROR", "message": f"STARTUP FAILED: DEF API error {resp.status}"})
+                    self._service_health["def_api"] = "error"
+                    self._service_health["def_auth"] = "error"
+                    return False
+        except Exception as e:
+            print(f"[STARTUP] DEF API test failed: {e}")
+            notify_ui("event", {"type": "ERROR", "message": f"STARTUP FAILED: DEF API exception"})
+            return False
+        
         # Emit initial service health
         self._service_health["hl_websocket"] = "healthy" if self._hl_ws_connected else "fallback"
         self._emit_service_health()
@@ -603,6 +644,9 @@ class ArbEngine:
         # This shows how synchronized the prices are
         self._price_gap_ms = price_age_ms
         
+        # Emit latency to UI (non-blocking callback, no latency impact)
+        self._emit_latency_update()
+        
         # Track consecutive DEF failures
         if def_price is None or def_price == 0:
             self._consecutive_def_failures += 1
@@ -700,6 +744,9 @@ class ArbEngine:
         self._def_quote_latency_ms = prime_latency
         self._hl_ws_price_age_ms = price_age_ms
         self._price_gap_ms = price_age_ms  # HL price age when grabbed right after DEF
+        
+        # Emit latency to UI (non-blocking callback, no latency impact)
+        self._emit_latency_update()
         
         # Track consecutive DEF failures
         if def_price is None or def_price == 0:
@@ -1702,8 +1749,11 @@ class ArbEngine:
                     if await self.execute_entry(hl_price, def_price, spread, cached_usdc_before, cached_weth_before):
                         # POST-ENTRY CONFIRMATION: Hold until positions verified
                         if not await self._confirm_entry_positions():
-                            notify_ui("event", {"type": "ERROR", "message": "Entry confirmation failed - position mismatch!"})
-                            # Continue anyway but with warning logged
+                            print(f"[PAUSE] Entry confirmation failed - position mismatch!")
+                            notify_ui("event", {"type": "ERROR", "message": "PAUSED: Entry confirmation failed - position mismatch!"})
+                            set_pause_status(True, "Entry confirmation failed - position mismatch")
+                            notify_ui("status", {"status": "PAUSED", "mode": "PAUSED", "pause_reason": "Entry confirmation failed - position mismatch"})
+                            return False  # PAUSE - don't continue
                         
                         cached_usdc_before = await self.get_def_balance()
                         cached_weth_before = await self.get_def_weth_balance()
@@ -1773,8 +1823,11 @@ class ArbEngine:
                     if await self.execute_exit(hl_price, def_price, spread, cached_usdc_before):
                         # POST-EXIT CONFIRMATION: Hold until flat positions verified
                         if not await self._confirm_exit_positions():
-                            notify_ui("event", {"type": "WARNING", "message": "Exit confirmation: residual position detected"})
-                            # Continue anyway - cycle is done but with warning
+                            print(f"[PAUSE] Exit confirmation failed - residual position detected!")
+                            notify_ui("event", {"type": "ERROR", "message": "PAUSED: Exit confirmation failed - residual position!"})
+                            set_pause_status(True, "Exit confirmation failed - residual position")
+                            notify_ui("status", {"status": "PAUSED", "mode": "PAUSED", "pause_reason": "Exit confirmation failed - residual position"})
+                            return False  # PAUSE - don't continue
                         
                         return True
                 else:
