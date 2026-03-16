@@ -110,7 +110,11 @@ def run_web_server():
 
 async def run_engine(args):
     """Run the arbitrage engine."""
-    engine = ArbEngine(size_usd=args.size)
+    # Handle size arguments - use min_size and max_size with underscores for attribute access
+    min_size = getattr(args, 'min_size', None)
+    max_size = getattr(args, 'max_size', None)
+    
+    engine = ArbEngine(size_usd=args.size, min_size=min_size, max_size=max_size)
     engine.ENTRY_THRESHOLD_BPS = args.entry
     engine.EXIT_THRESHOLD_BPS = args.exit
     engine.USE_TURBO = not args.prime
@@ -148,8 +152,16 @@ async def engine_loop(args):
     _restart_requested.clear()
     clear_stop_flag()
     
+    # Determine size display
+    min_size = getattr(args, 'min_size', None)
+    max_size = getattr(args, 'max_size', None)
+    if min_size and max_size:
+        size_str = f"${min_size}-${max_size} (random)"
+    else:
+        size_str = f"${args.size}"
+    
     print(f"\n[ENGINE] Starting arbitrage engine...")
-    print(f"[ENGINE] Size: ${args.size}, Entry: {args.entry}bp, Exit: {args.exit}bp")
+    print(f"[ENGINE] Size: {size_str}, Entry: {args.entry}bp, Exit: {args.exit}bp")
     print(f"[ENGINE] Mode: {'PRIME' if args.prime else 'TURBO'}, Slippage tolerance: {args.slip}bp\n")
     
     await run_engine(args)
@@ -174,8 +186,16 @@ async def engine_loop(args):
         
         await asyncio.sleep(2)
         
+        # Determine size display for restart
+        min_size = getattr(args, 'min_size', None)
+        max_size = getattr(args, 'max_size', None)
+        if min_size and max_size:
+            size_str = f"${min_size}-${max_size} (random)"
+        else:
+            size_str = f"${args.size}"
+        
         print(f"\n[ENGINE] Restarting arbitrage engine...")
-        print(f"[ENGINE] Size: ${args.size}, Entry: {args.entry}bp, Exit: {args.exit}bp\n")
+        print(f"[ENGINE] Size: {size_str}, Entry: {args.entry}bp, Exit: {args.exit}bp\n")
         
         await run_engine(args)
 
@@ -184,7 +204,9 @@ def main():
     global _engine_args
     
     parser = argparse.ArgumentParser(description="ETH Arbitrage Engine with Web UI")
-    parser.add_argument("--size", type=float, default=100, help="Order size in USD")
+    parser.add_argument("--size", type=float, default=100, help="Order size in USD (used if no range set)")
+    parser.add_argument("--min-size", type=float, default=None, help="Minimum order size for random range")
+    parser.add_argument("--max-size", type=float, default=None, help="Maximum order size for random range")
     parser.add_argument("--cycles", type=int, default=999, help="Number of cycles to run")
     parser.add_argument("--entry", type=float, default=5.0, help="Entry threshold (bps)")
     parser.add_argument("--exit", type=float, default=15.0, help="Exit threshold (bps)")

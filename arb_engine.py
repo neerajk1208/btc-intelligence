@@ -28,6 +28,7 @@ import json
 import time
 import hmac
 import hashlib
+import random
 import aiohttp
 import certifi
 from pathlib import Path
@@ -126,8 +127,12 @@ class ArbEngine:
     USE_TURBO = True  # Use TURBO instead of PRIME
     SLIPPAGE_TOLERANCE = "0.000500"  # 5 bps slippage tolerance for TURBO
     
-    def __init__(self, size_usd: float = 100.0):
-        self.size_usd = size_usd
+    def __init__(self, size_usd: float = 100.0, min_size: float = None, max_size: float = None):
+        # Size configuration
+        self.min_size = min_size
+        self.max_size = max_size
+        self.size_usd = size_usd  # Will be randomized per cycle if range is set
+        self._use_random_size = min_size is not None and max_size is not None
         self.session: Optional[aiohttp.ClientSession] = None
         self.hl_trader = None
         
@@ -609,6 +614,21 @@ class ArbEngine:
                 print(f"[HL] REST fallback error: {e}")
         
         return hl_price, def_price
+    
+    def _pick_cycle_size(self) -> float:
+        """Pick random order size for this cycle (called before cycle starts).
+        
+        If min_size and max_size are set, picks random value in range.
+        Otherwise uses fixed size_usd.
+        """
+        if self._use_random_size:
+            new_size = random.uniform(self.min_size, self.max_size)
+            # Round to nearest dollar for cleaner orders
+            new_size = round(new_size)
+            print(f"[SIZE] Random size for this cycle: ${new_size} (range: ${self.min_size}-${self.max_size})")
+            notify_ui("event", {"type": "INFO", "message": f"Cycle size: ${new_size}"})
+            return new_size
+        return self.size_usd
     
     def calc_spread(self, hl_price: float, def_price: float) -> float:
         """Calculate spread in basis points."""
@@ -1229,6 +1249,9 @@ class ArbEngine:
             await asyncio.sleep(warmup_remaining)
         
         notify_ui("warmup", {"remaining_sec": 0})
+        
+        # Pick random size for this cycle (no latency impact - done before entry detection)
+        self.size_usd = self._pick_cycle_size()
         print(f"[WARMUP] Complete. Trading enabled.")
         notify_ui("event", {"type": "INFO", "message": "Warmup complete. Trading enabled."})
         
