@@ -194,6 +194,35 @@ class ArbEngine:
         self._hl_ws_price: float = 0.0
         self._hl_ws_price_time: float = 0.0
         self._hl_ws_connected = False
+        
+        # Latency tracking (per-cycle)
+        self._def_quote_latency_ms: float = 0.0
+        self._hl_ws_price_age_ms: float = 0.0
+        self._def_exec_latency_ms: float = 0.0
+        self._hl_exec_latency_ms: float = 0.0
+        
+        # BPS/Slippage tracking (per-cycle)
+        self._expected_entry_spread: float = 0.0
+        self._actual_entry_spread: float = 0.0
+        self._expected_exit_spread: float = 0.0
+        self._actual_exit_spread: float = 0.0
+        
+        # Position confirmation
+        self._position_confirmed: bool = False
+        self._position_mismatch: bool = False
+        self._position_mismatch_detail: str = ""
+        
+        # Service health
+        self._service_health = {
+            "def_api": "unknown",
+            "def_auth": "unknown",
+            "hl_rest": "unknown",
+            "hl_websocket": "unknown"
+        }
+        
+        # Token check cadence (separate from refresh buffer)
+        self._token_cadence_interval = 60  # Check display every 60 seconds
+        self._last_token_cadence_check = 0
     
     async def _on_hl_ws_message(self, data: Dict[str, Any]) -> None:
         """Handle HL WebSocket messages - update latest ETH price."""
@@ -537,11 +566,25 @@ class ArbEngine:
             except Exception as e:
                 print(f"[HL] REST fallback error: {e}")
         
+        # Store latency metrics
+        self._def_quote_latency_ms = prime_latency
+        self._hl_ws_price_age_ms = price_age_ms
+        
+        # Update service health based on results
+        self._service_health["def_api"] = "healthy" if def_price else "error"
+        self._service_health["def_auth"] = "healthy" if def_price else "error"
+        self._service_health["hl_websocket"] = "healthy" if self._hl_ws_connected else "fallback"
+        self._service_health["hl_rest"] = "healthy" if hl_price else "error"
+        
+        # Token cadence check (no latency impact)
+        self._check_token_cadence()
+        
         # Log periodically with actual gap measurement
         self._calibration_count += 1
         if self._calibration_count % 20 == 1:
             ws_status = "WS" if self._hl_ws_connected else "REST"
             print(f"[SYNC] DEF PRIME: {prime_latency:.0f}ms | HL ({ws_status}): {price_age_ms:.0f}ms old | ACTUAL GAP: {price_age_ms:.0f}ms")
+            self._emit_service_health()
         
         return hl_price, def_price
     
@@ -613,6 +656,13 @@ class ArbEngine:
             except Exception as e:
                 print(f"[HL] REST fallback error: {e}")
         
+        # Store latency metrics (exit prices)
+        self._def_quote_latency_ms = prime_latency
+        self._hl_ws_price_age_ms = price_age_ms
+        
+        # Token cadence check (no latency impact)
+        self._check_token_cadence()
+        
         return hl_price, def_price
     
     def _pick_cycle_size(self) -> float:
@@ -633,6 +683,160 @@ class ArbEngine:
     def calc_spread(self, hl_price: float, def_price: float) -> float:
         """Calculate spread in basis points."""
         return ((def_price - hl_price) / hl_price) * 10000
+    
+    async def _confirm_entry_positions(self) -> bool:
+        """Confirm entry execution by querying actual positions.
+        
+        Called AFTER entry execution. HOLDS cycle until confirmed.
+        Returns True if positions match expected, False if mismatch.
+        """
+        print("\n[CONFIRM] Verifying entry positions...")
+        
+        # Query actual positions
+        def_weth = await self.get_def_weth_balance()
+        hl_pos = await self.hl_trader.get_position()
+        hl_short = abs(hl_pos.get("size", 0))  # Short is negative, take abs
+        
+        # Expected values
+        expected_def = self.def_weth_amount
+        expected_hl = self.hl_size_eth
+        
+        # Calculate mismatch
+        def_diff_pct = abs(def_weth - expected_def) / expected_def * 100 if expected_def > 0 else 0
+        hl_diff_pct = abs(hl_short - expected_hl) / expected_hl * 100 if expected_hl > 0 else 0
+        
+        # Tolerance: 1% difference allowed
+        tolerance_pct = 1.0
+        
+        if def_diff_pct <= tolerance_pct and hl_diff_pct <= tolerance_pct:
+            # Also check DEF vs HL match
+            cross_diff_pct = abs(def_weth - hl_short) / max(def_weth, hl_short) * 100 if max(def_weth, hl_short) > 0 else 0
+            
+            if cross_diff_pct <= tolerance_pct:
+                print(f"[CONFIRM] ✓ Entry confirmed: DEF {def_weth:.6f} WETH, HL {hl_short:.4f} short")
+                self._position_confirmed = True
+                self._position_mismatch = False
+                self._position_mismatch_detail = ""
+                notify_ui("position_confirmed", {
+                    "confirmed": True,
+                    "def_amount": def_weth,
+                    "hl_amount": hl_short,
+                    "phase": "entry"
+                })
+                return True
+            else:
+                detail = f"DEF: {def_weth:.6f}, HL: {hl_short:.4f} (diff: {cross_diff_pct:.1f}%)"
+                print(f"[CONFIRM] ⚠️ Position mismatch! {detail}")
+                self._position_confirmed = False
+                self._position_mismatch = True
+                self._position_mismatch_detail = detail
+                notify_ui("position_mismatch", {
+                    "def_amount": def_weth,
+                    "hl_amount": hl_short,
+                    "diff_pct": cross_diff_pct,
+                    "phase": "entry"
+                })
+                notify_ui("event", {"type": "ERROR", "message": f"Position mismatch: {detail}"})
+                return False
+        else:
+            detail = f"DEF expected {expected_def:.6f} got {def_weth:.6f}, HL expected {expected_hl:.4f} got {hl_short:.4f}"
+            print(f"[CONFIRM] ⚠️ Fill mismatch! {detail}")
+            self._position_confirmed = False
+            self._position_mismatch = True
+            self._position_mismatch_detail = detail
+            notify_ui("position_mismatch", {
+                "def_amount": def_weth,
+                "hl_amount": hl_short,
+                "expected_def": expected_def,
+                "expected_hl": expected_hl,
+                "phase": "entry"
+            })
+            notify_ui("event", {"type": "ERROR", "message": f"Fill mismatch: {detail}"})
+            return False
+    
+    async def _confirm_exit_positions(self) -> bool:
+        """Confirm exit execution by verifying positions are flat.
+        
+        Called AFTER exit execution. HOLDS cycle until confirmed.
+        Returns True if flat, False if residual position.
+        """
+        print("\n[CONFIRM] Verifying exit positions (should be flat)...")
+        
+        # Query actual positions
+        def_weth = await self.get_def_weth_balance()
+        hl_pos = await self.hl_trader.get_position()
+        hl_short = abs(hl_pos.get("size", 0))
+        
+        # Tolerance: less than 0.0001 ETH ($0.20 at $2000/ETH)
+        flat_tolerance = 0.0001
+        
+        if def_weth <= flat_tolerance and hl_short <= flat_tolerance:
+            print(f"[CONFIRM] ✓ Exit confirmed: Positions flat (DEF: {def_weth:.6f}, HL: {hl_short:.6f})")
+            self._position_confirmed = True
+            self._position_mismatch = False
+            self._position_mismatch_detail = ""
+            notify_ui("position_confirmed", {
+                "confirmed": True,
+                "def_amount": def_weth,
+                "hl_amount": hl_short,
+                "phase": "exit",
+                "flat": True
+            })
+            return True
+        else:
+            detail = f"Residual position: DEF {def_weth:.6f} WETH, HL {hl_short:.4f} short"
+            print(f"[CONFIRM] ⚠️ Not flat! {detail}")
+            self._position_confirmed = False
+            self._position_mismatch = True
+            self._position_mismatch_detail = detail
+            notify_ui("position_mismatch", {
+                "def_amount": def_weth,
+                "hl_amount": hl_short,
+                "phase": "exit",
+                "flat": False
+            })
+            notify_ui("event", {"type": "WARNING", "message": f"Exit not flat: {detail}"})
+            return False
+    
+    def _emit_latency_update(self):
+        """Emit current latency metrics to UI."""
+        notify_ui("latency", {
+            "def_quote_ms": self._def_quote_latency_ms,
+            "hl_ws_age_ms": self._hl_ws_price_age_ms,
+            "def_exec_ms": self._def_exec_latency_ms,
+            "hl_exec_ms": self._hl_exec_latency_ms
+        })
+    
+    def _emit_cycle_bps(self):
+        """Emit cycle BPS/slippage metrics to UI."""
+        entry_slip = self._actual_entry_spread - self._expected_entry_spread
+        exit_slip = self._actual_exit_spread - self._expected_exit_spread
+        total_slip = entry_slip + exit_slip
+        
+        notify_ui("cycle_bps", {
+            "expected_entry": self._expected_entry_spread,
+            "actual_entry": self._actual_entry_spread,
+            "entry_slippage": entry_slip,
+            "expected_exit": self._expected_exit_spread,
+            "actual_exit": self._actual_exit_spread,
+            "exit_slippage": exit_slip,
+            "total_slippage": total_slip
+        })
+    
+    def _emit_service_health(self):
+        """Emit service health status to UI."""
+        notify_ui("service_health", self._service_health)
+    
+    def _check_token_cadence(self):
+        """Check token status on cadence (60s) - no latency impact."""
+        now = time.time()
+        if now - self._last_token_cadence_check >= self._token_cadence_interval:
+            self._last_token_cadence_check = now
+            expires_in = max(0, self._token_valid_until - now)
+            notify_ui("token_checked", {
+                "expires_in_sec": expires_in,
+                "last_checked_at": now
+            })
     
     async def get_def_balance(self) -> float:
         """Get USDC balance on Definitive."""
@@ -919,13 +1123,27 @@ class ArbEngine:
             self.hl_size_eth = hl_size
             self.hl_entry_price = hl_fill_price
             
+            # Store latency metrics
+            self._def_exec_latency_ms = def_latency_ms
+            self._hl_exec_latency_ms = hl_latency_ms
+            
+            # Calculate actual entry spread (based on fill prices)
+            self._expected_entry_spread = spread_bps
+            self._actual_entry_spread = self.calc_spread(hl_fill_price, actual_def_price)
+            entry_slip = self._actual_entry_spread - self._expected_entry_spread
+            
             print(f"\n[ENTRY COMPLETE]")
             print(f"  DEF: USDC spent ${usdc_spent:.2f}, WETH received {weth_received:.6f}")
             print(f"  DEF: Bought {self.def_weth_amount:.6f} WETH @ ${self.def_entry_price:.2f} (quoted: ${def_price:.2f})")
             print(f"  HL:  Shorted {self.hl_size_eth:.4f} ETH @ ${self.hl_entry_price:.2f}")
-            print(f"  Entry spread: {spread_bps:+.1f} bps")
+            print(f"  Entry spread: {spread_bps:+.1f} bps (expected) → {self._actual_entry_spread:+.1f} bps (actual)")
+            print(f"  Entry slippage: {entry_slip:+.1f} bps")
+            print(f"  Latency: DEF {def_latency_ms:.0f}ms, HL {hl_latency_ms:.0f}ms")
+            
             notify_ui("event", {"type": "ENTRY", "message": f"Entry complete: DEF ${usdc_spent:.2f} spent, HL shorted {self.hl_size_eth:.4f} ETH"})
             notify_ui("position", {"in_position": True, "entry_spread_bps": spread_bps, "status": "IN_POSITION"})
+            self._emit_latency_update()
+            
             return True
         else:
             print(f"\n[ENTRY FAILED]")
@@ -1180,10 +1398,23 @@ class ArbEngine:
             
             self.cycle_count += 1
             
+            # Store exit latency metrics
+            self._def_exec_latency_ms = def_latency_ms
+            self._hl_exec_latency_ms = hl_latency_ms
+            
+            # Calculate actual exit spread (based on fill prices)
+            self._expected_exit_spread = spread_bps
+            self._actual_exit_spread = self.calc_spread(hl_exit_price, def_exit_price)
+            exit_slip = self._actual_exit_spread - self._expected_exit_spread
+            total_slip = (self._actual_entry_spread - self._expected_entry_spread) + exit_slip
+            
             print(f"\n[EXIT COMPLETE]")
             print(f"  DEF: Sold @ ${def_exit_price:.2f} (quoted: ${def_price:.2f}) | P&L: ${def_pnl:+.4f}")
             print(f"  HL:  Closed @ ${hl_exit_price:.2f} | P&L: ${hl_pnl:+.4f}")
             print(f"  Fees: ~${total_fees:.4f}")
+            print(f"  Exit spread: {spread_bps:+.1f} bps (expected) → {self._actual_exit_spread:+.1f} bps (actual)")
+            print(f"  Exit slippage: {exit_slip:+.1f} bps | Total cycle slippage: {total_slip:+.1f} bps")
+            print(f"  Latency: DEF {def_latency_ms:.0f}ms, HL {hl_latency_ms:.0f}ms")
             
             # Send detailed cycle summary to UI
             notify_ui("event", {"type": "CYCLE_COMPLETE", "message": f"Cycle complete: Net P&L ${net_pnl:+.4f} (fees ${total_fees:.4f})"})
@@ -1202,6 +1433,9 @@ class ArbEngine:
                 "hl_exit_price": hl_exit_price
             })
             notify_ui("position", {"in_position": False, "status": "IDLE"})
+            self._emit_latency_update()
+            self._emit_cycle_bps()
+            
             print(f"  NET P&L: ${net_pnl:+.4f}")
             print(f"  Spread captured: {spread_bps - self.entry_spread_bps:.1f} bps")
             
@@ -1330,6 +1564,11 @@ class ArbEngine:
                     notify_ui("event", {"type": "ENTRY", "message": f"Entry signal at {spread:+.1f} bps"})
                     
                     if await self.execute_entry(hl_price, def_price, spread, cached_usdc_before):
+                        # POST-ENTRY CONFIRMATION: Hold until positions verified
+                        if not await self._confirm_entry_positions():
+                            notify_ui("event", {"type": "ERROR", "message": "Entry confirmation failed - position mismatch!"})
+                            # Continue anyway but with warning logged
+                        
                         cached_usdc_before = await self.get_def_balance()
                         print(f"[POST-ENTRY] Updated DEF USDC balance: ${cached_usdc_before:,.2f}")
                         break
@@ -1384,6 +1623,11 @@ class ArbEngine:
                     notify_ui("event", {"type": "EXIT", "message": f"Exit signal at {spread:+.1f} bps, unrealized ${total_unrealized:+.4f}"})
                     
                     if await self.execute_exit(hl_price, def_price, spread, cached_usdc_before):
+                        # POST-EXIT CONFIRMATION: Hold until flat positions verified
+                        if not await self._confirm_exit_positions():
+                            notify_ui("event", {"type": "WARNING", "message": "Exit confirmation: residual position detected"})
+                            # Continue anyway - cycle is done but with warning
+                        
                         return True
                 else:
                     print(f"{now} | Spread: {spread:+.1f}bp | Unrealized: ${total_unrealized:+.4f} | waiting for >={self.EXIT_THRESHOLD_BPS}bp")

@@ -100,6 +100,49 @@ def handle_ui_event(event_type: str, data: dict):
     
     elif event_type == "event":
         log_event(data.get("type", "INFO"), data.get("message", ""))
+    
+    elif event_type == "latency":
+        ui_state["latency"]["def_quote_ms"] = data.get("def_quote_ms", 0)
+        ui_state["latency"]["hl_ws_age_ms"] = data.get("hl_ws_age_ms", 0)
+        ui_state["latency"]["def_exec_ms"] = data.get("def_exec_ms", 0)
+        ui_state["latency"]["hl_exec_ms"] = data.get("hl_exec_ms", 0)
+        emit_update()
+    
+    elif event_type == "service_health":
+        ui_state["services"]["def_api"] = data.get("def_api", "unknown")
+        ui_state["services"]["def_auth"] = data.get("def_auth", "unknown")
+        ui_state["services"]["hl_rest"] = data.get("hl_rest", "unknown")
+        ui_state["services"]["hl_websocket"] = data.get("hl_websocket", "unknown")
+        emit_update()
+    
+    elif event_type == "position_confirmed":
+        ui_state["position_confirmed"] = data.get("confirmed", False)
+        ui_state["position_mismatch"] = False
+        ui_state["position_mismatch_detail"] = None
+        emit_update()
+    
+    elif event_type == "position_mismatch":
+        ui_state["position_confirmed"] = False
+        ui_state["position_mismatch"] = True
+        def_amt = data.get("def_amount", 0)
+        hl_amt = data.get("hl_amount", 0)
+        ui_state["position_mismatch_detail"] = f"DEF: {def_amt:.6f}, HL: {hl_amt:.4f}"
+        emit_update()
+    
+    elif event_type == "cycle_bps":
+        ui_state["cycle_bps"]["expected_entry"] = data.get("expected_entry", 0)
+        ui_state["cycle_bps"]["actual_entry"] = data.get("actual_entry", 0)
+        ui_state["cycle_bps"]["entry_slippage"] = data.get("entry_slippage", 0)
+        ui_state["cycle_bps"]["expected_exit"] = data.get("expected_exit", 0)
+        ui_state["cycle_bps"]["actual_exit"] = data.get("actual_exit", 0)
+        ui_state["cycle_bps"]["exit_slippage"] = data.get("exit_slippage", 0)
+        ui_state["cycle_bps"]["total_slippage"] = data.get("total_slippage", 0)
+        emit_update()
+    
+    elif event_type == "token_checked":
+        ui_state["token_expires_in_sec"] = data.get("expires_in_sec", 0)
+        ui_state["token_last_checked"] = data.get("last_checked_at", None)
+        emit_update()
 
 
 def run_web_server():

@@ -36,7 +36,7 @@ def clear_stop_flag():
 # Global state for UI
 ui_state = {
     "status": "IDLE",
-    "mode": "ENTRY",  # ENTRY, EXIT, WARMUP, REFRESHING_TOKEN
+    "mode": "ENTRY",  # ENTRY, EXIT, WARMUP, REFRESHING_TOKEN, STOPPED
     "current_spread_bps": 0,
     "hl_price": 0,
     "def_price": 0,
@@ -70,7 +70,40 @@ ui_state = {
     },
     # Token status
     "token_expires_in_sec": 0,
-    "warmup_remaining_sec": 0
+    "token_last_checked": None,
+    "warmup_remaining_sec": 0,
+    
+    # Latency tracking
+    "latency": {
+        "def_quote_ms": 0,
+        "hl_ws_age_ms": 0,
+        "def_exec_ms": 0,
+        "hl_exec_ms": 0
+    },
+    
+    # Service health
+    "services": {
+        "def_api": "unknown",
+        "def_auth": "unknown",
+        "hl_rest": "unknown",
+        "hl_websocket": "unknown"
+    },
+    
+    # Cycle BPS breakdown
+    "cycle_bps": {
+        "expected_entry": 0,
+        "actual_entry": 0,
+        "entry_slippage": 0,
+        "expected_exit": 0,
+        "actual_exit": 0,
+        "exit_slippage": 0,
+        "total_slippage": 0
+    },
+    
+    # Position confirmation
+    "position_confirmed": False,
+    "position_mismatch": False,
+    "position_mismatch_detail": None
 }
 
 def emit_update():

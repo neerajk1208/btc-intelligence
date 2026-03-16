@@ -159,6 +159,64 @@
         }
         .status-stopped { color: #ff4444; }
         .mode-STOPPED { background: #4a1a1a; color: #ff4444; }
+        
+        /* Service health indicators */
+        .health-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .health-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+        .health-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        .health-dot.healthy { background: #00ff88; }
+        .health-dot.error { background: #ff4444; }
+        .health-dot.fallback { background: #ffaa00; }
+        .health-dot.unknown { background: #666; }
+        
+        /* Position confirmation */
+        .confirmation-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        .confirmation-status.confirmed {
+            background: #1a4a1a;
+            color: #00ff88;
+        }
+        .confirmation-status.mismatch {
+            background: #4a1a1a;
+            color: #ff4444;
+        }
+        .confirmation-status.pending {
+            background: #333;
+            color: #888;
+        }
+        
+        /* Slippage indicator */
+        .slippage-value.good { color: #00ff88; }
+        .slippage-value.bad { color: #ff4444; }
+        .slippage-value.neutral { color: #888; }
+        
+        /* Compact card */
+        .card-compact {
+            padding: 15px;
+        }
+        .card-compact h2 {
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -267,6 +325,83 @@
                 <div class="row">
                     <span class="label">Total</span>
                     <span class="value" id="total-balance">$0.00</span>
+                </div>
+            </div>
+            
+            <div class="card card-compact">
+                <h2>Service Health</h2>
+                <div class="health-grid">
+                    <div class="health-item">
+                        <span class="health-dot unknown" id="health-def-api"></span>
+                        <span>DEF API</span>
+                    </div>
+                    <div class="health-item">
+                        <span class="health-dot unknown" id="health-def-auth"></span>
+                        <span>DEF Auth</span>
+                    </div>
+                    <div class="health-item">
+                        <span class="health-dot unknown" id="health-hl-ws"></span>
+                        <span>HL WebSocket</span>
+                    </div>
+                    <div class="health-item">
+                        <span class="health-dot unknown" id="health-hl-rest"></span>
+                        <span>HL REST</span>
+                    </div>
+                </div>
+                <div class="confirmation-status pending" id="position-confirmation">
+                    <span>Position: --</span>
+                </div>
+            </div>
+            
+            <div class="card card-compact">
+                <h2>Latency</h2>
+                <div class="mini-row">
+                    <span class="label">DEF Quote</span>
+                    <span class="value" id="lat-def-quote">-- ms</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">HL Price Age</span>
+                    <span class="value" id="lat-hl-age">-- ms</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">DEF Exec</span>
+                    <span class="value" id="lat-def-exec">-- ms</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">HL Exec</span>
+                    <span class="value" id="lat-hl-exec">-- ms</span>
+                </div>
+            </div>
+            
+            <div class="card card-compact">
+                <h2>Cycle Slippage (BPS)</h2>
+                <div class="mini-row">
+                    <span class="label">Entry: Expected</span>
+                    <span class="value" id="bps-entry-expected">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Entry: Actual</span>
+                    <span class="value" id="bps-entry-actual">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Entry Slip</span>
+                    <span class="value slippage-value neutral" id="bps-entry-slip">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Exit: Expected</span>
+                    <span class="value" id="bps-exit-expected">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Exit: Actual</span>
+                    <span class="value" id="bps-exit-actual">--</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">Exit Slip</span>
+                    <span class="value slippage-value neutral" id="bps-exit-slip">--</span>
+                </div>
+                <div class="mini-row" style="border-top: 1px solid #333; padding-top: 8px; margin-top: 4px;">
+                    <span class="label"><strong>Total Slip</strong></span>
+                    <span class="value slippage-value neutral" id="bps-total-slip">--</span>
                 </div>
             </div>
         </div>
@@ -422,6 +557,70 @@
                     </div>
                 `).join('');
                 document.getElementById('events').innerHTML = eventsHtml;
+            }
+            
+            // Service Health
+            if (state.services) {
+                updateHealthDot('health-def-api', state.services.def_api);
+                updateHealthDot('health-def-auth', state.services.def_auth);
+                updateHealthDot('health-hl-ws', state.services.hl_websocket);
+                updateHealthDot('health-hl-rest', state.services.hl_rest);
+            }
+            
+            // Position Confirmation
+            const confirmEl = document.getElementById('position-confirmation');
+            if (state.position_mismatch) {
+                confirmEl.className = 'confirmation-status mismatch';
+                confirmEl.innerHTML = `<span>⚠️ MISMATCH: ${state.position_mismatch_detail || 'Check positions!'}</span>`;
+            } else if (state.position_confirmed) {
+                confirmEl.className = 'confirmation-status confirmed';
+                confirmEl.innerHTML = '<span>✓ Position Confirmed</span>';
+            } else {
+                confirmEl.className = 'confirmation-status pending';
+                confirmEl.innerHTML = '<span>Position: --</span>';
+            }
+            
+            // Latency
+            if (state.latency) {
+                document.getElementById('lat-def-quote').textContent = (state.latency.def_quote_ms || 0).toFixed(0) + ' ms';
+                document.getElementById('lat-hl-age').textContent = (state.latency.hl_ws_age_ms || 0).toFixed(0) + ' ms';
+                document.getElementById('lat-def-exec').textContent = (state.latency.def_exec_ms || 0).toFixed(0) + ' ms';
+                document.getElementById('lat-hl-exec').textContent = (state.latency.hl_exec_ms || 0).toFixed(0) + ' ms';
+            }
+            
+            // Cycle BPS/Slippage
+            if (state.cycle_bps) {
+                document.getElementById('bps-entry-expected').textContent = (state.cycle_bps.expected_entry || 0).toFixed(1);
+                document.getElementById('bps-entry-actual').textContent = (state.cycle_bps.actual_entry || 0).toFixed(1);
+                updateSlippage('bps-entry-slip', state.cycle_bps.entry_slippage || 0);
+                
+                document.getElementById('bps-exit-expected').textContent = (state.cycle_bps.expected_exit || 0).toFixed(1);
+                document.getElementById('bps-exit-actual').textContent = (state.cycle_bps.actual_exit || 0).toFixed(1);
+                updateSlippage('bps-exit-slip', state.cycle_bps.exit_slippage || 0);
+                
+                updateSlippage('bps-total-slip', state.cycle_bps.total_slippage || 0);
+            }
+        }
+        
+        function updateHealthDot(id, status) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.className = 'health-dot ' + (status || 'unknown');
+            }
+        }
+        
+        function updateSlippage(id, value) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = (value >= 0 ? '+' : '') + value.toFixed(1);
+                // Negative slippage is good (got better price), positive is bad
+                if (Math.abs(value) < 0.5) {
+                    el.className = 'value slippage-value neutral';
+                } else if (value < 0) {
+                    el.className = 'value slippage-value good';
+                } else {
+                    el.className = 'value slippage-value bad';
+                }
             }
         }
         
