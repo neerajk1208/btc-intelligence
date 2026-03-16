@@ -329,7 +329,7 @@ def main():
     parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
     parser.add_argument("--exit", type=float, default=9.0, help="Exit threshold (bps)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode")
-    parser.add_argument("--slip", type=float, default=5.0, help="Slippage tolerance in bps")
+    parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps")
     
     args = parser.parse_args()
     _engine_args = args

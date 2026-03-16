@@ -2079,7 +2079,7 @@ async def main():
     parser.add_argument("--exit", type=float, default=9.0, help="Exit threshold (bps)")
     parser.add_argument("--turbo", action="store_true", help="Use TURBO mode (default)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode (with quote)")
-    parser.add_argument("--slip", type=float, default=5.0, help="Slippage tolerance in bps (TURBO only)")
+    parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps (TURBO only)")
     
     args = parser.parse_args()
     
