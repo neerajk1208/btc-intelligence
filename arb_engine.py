@@ -139,7 +139,7 @@ class ArbEngine:
     
     # TURBO settings
     USE_TURBO = True  # Use TURBO instead of PRIME
-    SLIPPAGE_TOLERANCE = "0.000500"  # 5 bps slippage tolerance for TURBO
+    SLIPPAGE_TOLERANCE = "0.000750"  # 7.5 bps slippage tolerance for TURBO
     
     def __init__(self, size_usd: float = 100.0, min_size: float = None, max_size: float = None):
         # Size configuration

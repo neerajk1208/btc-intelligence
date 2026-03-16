@@ -237,6 +237,8 @@ def handle_stop():
     engine_stop_flag.set()
     ui_state["status"] = "STOPPING..."
     ui_state["mode"] = "STOPPED"
+    ui_state["is_paused"] = False
+    ui_state["pause_reason"] = None
     log_event("WARNING", "Engine stop requested from UI")
     emit_update()
 
@@ -249,9 +251,28 @@ def handle_restart():
     # Clear stop flag first
     engine_stop_flag.clear()
     
+    # RESET UI STATE on restart - clear stale position data
     ui_state["status"] = "RESTARTING..."
     ui_state["mode"] = "WARMUP"
-    log_event("INFO", "Engine restart requested from UI")
+    ui_state["in_position"] = False
+    ui_state["entry_spread_bps"] = 0
+    ui_state["entry_time"] = None
+    ui_state["unrealized_pnl"] = 0
+    ui_state["current_spread_bps"] = 0
+    ui_state["hl_price"] = 0
+    ui_state["def_price"] = 0
+    ui_state["position_confirmed"] = False
+    ui_state["position_mismatch"] = False
+    ui_state["position_mismatch_detail"] = None
+    ui_state["is_paused"] = False
+    ui_state["pause_reason"] = None
+    ui_state["last_cycle"] = {
+        "entry_spread": 0, "exit_spread": 0, "realized_pnl": 0,
+        "def_pnl": 0, "hl_pnl": 0, "fees": 0,
+        "def_latency_ms": 0, "hl_latency_ms": 0
+    }
+    
+    log_event("INFO", "Engine restart requested - UI state reset")
     emit_update()
     
     # Call restart callback if set
