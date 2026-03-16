@@ -2029,10 +2029,10 @@ async def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="ETH Arbitrage Engine")
-    parser.add_argument("--size", type=float, default=100, help="Order size in USD")
+    parser.add_argument("--size", type=float, default=750, help="Order size in USD")
     parser.add_argument("--cycles", type=int, default=1, help="Number of cycles to run")
-    parser.add_argument("--entry", type=float, default=5.0, help="Entry threshold (bps)")
-    parser.add_argument("--exit", type=float, default=15.0, help="Exit threshold (bps)")
+    parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
+    parser.add_argument("--exit", type=float, default=9.0, help="Exit threshold (bps)")
     parser.add_argument("--turbo", action="store_true", help="Use TURBO mode (default)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode (with quote)")
     parser.add_argument("--slip", type=float, default=5.0, help="Slippage tolerance in bps (TURBO only)")

@@ -79,8 +79,8 @@ def handle_ui_event(event_type: str, data: dict):
         emit_update()
     
     elif event_type == "thresholds":
-        ui_state["entry_threshold_bps"] = data.get("entry_bps", -3)
-        ui_state["exit_threshold_bps"] = data.get("exit_bps", 15)
+        ui_state["entry_threshold_bps"] = data.get("entry_bps", 0)
+        ui_state["exit_threshold_bps"] = data.get("exit_bps", 9)
         emit_update()
     
     elif event_type == "warmup":
