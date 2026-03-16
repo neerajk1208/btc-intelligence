@@ -855,6 +855,69 @@ class ArbEngine:
                 "last_checked_at": now
             })
     
+    async def _check_position_balance(self) -> bool:
+        """Check if positions are balanced. Returns True if OK to proceed, False if HALT needed.
+        
+        BALANCED means:
+          - Both flat (DEF WETH ≈ 0 AND HL short ≈ 0), OR
+          - Both have matching positions (DEF WETH > 0 AND HL short ≈ DEF WETH)
+        
+        IMBALANCED means:
+          - HL has short but no DEF WETH
+          - DEF has WETH but no HL short
+          - Sizes don't match (>5% difference)
+        
+        If imbalanced → HALT, don't continue.
+        """
+        print("[BALANCE CHECK] Verifying position balance...")
+        
+        # Get actual positions
+        def_weth = await self.get_def_weth_balance()
+        hl_pos = await self.hl_trader.get_position()
+        hl_size = abs(hl_pos.get("size", 0))  # HL short is negative, take abs
+        
+        # Thresholds
+        flat_threshold = 0.0001  # Consider flat if < 0.0001 ETH
+        match_tolerance = 0.05  # 5% tolerance for matching
+        
+        def_has_position = def_weth > flat_threshold
+        hl_has_position = hl_size > flat_threshold
+        
+        # Case 1: Both flat - BALANCED
+        if not def_has_position and not hl_has_position:
+            print(f"[BALANCE CHECK] ✓ Both flat (DEF: {def_weth:.6f}, HL: {hl_size:.6f})")
+            notify_ui("event", {"type": "INFO", "message": "Position check: Both flat ✓"})
+            return True
+        
+        # Case 2: Both have positions - check if they match
+        if def_has_position and hl_has_position:
+            diff_pct = abs(def_weth - hl_size) / max(def_weth, hl_size)
+            if diff_pct <= match_tolerance:
+                print(f"[BALANCE CHECK] ✓ Positions match (DEF: {def_weth:.6f}, HL: {hl_size:.6f}, diff: {diff_pct*100:.1f}%)")
+                notify_ui("event", {"type": "INFO", "message": f"Position check: Matched ✓ (DEF: {def_weth:.4f}, HL: {hl_size:.4f})"})
+                return True
+            else:
+                print(f"[BALANCE CHECK] ✗ IMBALANCED - Size mismatch! DEF: {def_weth:.6f}, HL: {hl_size:.6f}, diff: {diff_pct*100:.1f}%")
+                notify_ui("event", {"type": "ERROR", "message": f"IMBALANCED: Size mismatch! DEF: {def_weth:.4f}, HL: {hl_size:.4f}"})
+                notify_ui("position_mismatch", {"def_amount": def_weth, "hl_amount": hl_size, "diff_pct": diff_pct * 100})
+                return False
+        
+        # Case 3: Only HL has position - IMBALANCED
+        if hl_has_position and not def_has_position:
+            print(f"[BALANCE CHECK] ✗ IMBALANCED - HL has {hl_size:.4f} short but DEF has no WETH!")
+            notify_ui("event", {"type": "ERROR", "message": f"IMBALANCED: HL has {hl_size:.4f} short but no DEF WETH!"})
+            notify_ui("position_mismatch", {"def_amount": def_weth, "hl_amount": hl_size, "diff_pct": 100})
+            return False
+        
+        # Case 4: Only DEF has position - IMBALANCED
+        if def_has_position and not hl_has_position:
+            print(f"[BALANCE CHECK] ✗ IMBALANCED - DEF has {def_weth:.4f} WETH but HL has no short!")
+            notify_ui("event", {"type": "ERROR", "message": f"IMBALANCED: DEF has {def_weth:.4f} WETH but no HL short!"})
+            notify_ui("position_mismatch", {"def_amount": def_weth, "hl_amount": hl_size, "diff_pct": 100})
+            return False
+        
+        return True
+    
     async def get_def_balance(self) -> float:
         """Get USDC balance on Definitive."""
         try:
@@ -1503,11 +1566,20 @@ class ArbEngine:
             await asyncio.sleep(warmup_remaining)
         
         notify_ui("warmup", {"remaining_sec": 0})
+        print(f"[WARMUP] Complete.")
+        
+        # CRITICAL: Check position balance before ANY trading
+        if not await self._check_position_balance():
+            print("[HALT] Position imbalance detected. STOPPING ENGINE.")
+            notify_ui("event", {"type": "ERROR", "message": "HALTED: Position imbalance! Manual intervention required."})
+            ui_state_update = {"status": "HALTED", "mode": "HALTED"}
+            notify_ui("status", ui_state_update)
+            return False  # Don't proceed with this cycle
         
         # Pick random size for this cycle (no latency impact - done before entry detection)
         self.size_usd = self._pick_cycle_size()
-        print(f"[WARMUP] Complete. Trading enabled.")
-        notify_ui("event", {"type": "INFO", "message": "Warmup complete. Trading enabled."})
+        print(f"[OK] Position balanced. Trading enabled.")
+        notify_ui("event", {"type": "INFO", "message": "Position check passed. Trading enabled."})
         
         # Load initial token expiry and notify UI
         print(f"[DEBUG] Loading tokens...")
@@ -1677,6 +1749,13 @@ class ArbEngine:
             print(f"{'='*60}")
             notify_ui("balances", {"def_usdc": def_start, "hl_usdc": hl_start})
             notify_ui("event", {"type": "INFO", "message": f"Engine started. Total balance: ${total_start:,.2f}"})
+            
+            # CRITICAL: Initial position balance check before ANY cycles
+            print("\n[STARTUP] Running initial position balance check...")
+            if not await self._check_position_balance():
+                print("[HALT] Position imbalance detected at startup. ENGINE WILL NOT RUN.")
+                notify_ui("event", {"type": "ERROR", "message": "STARTUP HALTED: Position imbalance! Manual intervention required."})
+                return  # Exit run() entirely - don't start any cycles
             
             # Run cycles
             for i in range(num_cycles):

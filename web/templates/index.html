@@ -159,6 +159,12 @@
         }
         .status-stopped { color: #ff4444; }
         .mode-STOPPED { background: #4a1a1a; color: #ff4444; }
+        .status-halted { color: #ff0000; font-weight: bold; }
+        .mode-HALTED { background: #ff0000; color: #ffffff; animation: blink 1s infinite; }
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.5; }
+        }
         
         /* Service health indicators */
         .health-grid {
