@@ -394,9 +394,9 @@ class ArbEngine:
         return True
     
     def _maybe_reload_tokens(self) -> bool:
-        """Check for updated tokens from env vars or file (non-blocking).
+        """Check for updated tokens from env vars (non-blocking).
         
-        Checks env vars first (for Railway hot-reload), then falls back to file.
+        Checks env vars for Railway hot-reload. Only falls back to file if NO env var token.
         Returns True if tokens were reloaded.
         """
         now = time.time()
@@ -409,29 +409,33 @@ class ArbEngine:
         new_access = os.environ.get("PRIVY_ACCESS_TOKEN", "")
         new_id = os.environ.get("PRIVY_ID_TOKEN", "")
         
-        if new_access and new_access != self.privy_token:
-            # New tokens from env vars - update everything
-            self.privy_token = new_access
-            self.privy_id_token = new_id
-            self._token_valid_until = self._decode_jwt_exp(new_access)
-            
-            # Update session cookies
-            if self.session:
-                from yarl import URL
-                self.session.cookie_jar.update_cookies(
-                    {"privy-token": new_access, "privy-id-token": new_id},
-                    URL("https://api.definitive.fi")
-                )
-                self.session.cookie_jar.update_cookies(
-                    {"privy-token": new_access, "privy-id-token": new_id},
-                    URL("https://client-api.definitive.fi")
-                )
-            
-            exp_time = time.strftime("%H:%M:%S", time.localtime(self._token_valid_until))
-            print(f"[TOKEN] Reloaded from env vars, expires at {exp_time}")
-            return True
+        if new_access:
+            # Env var token exists
+            if new_access != self.privy_token:
+                # New/different token in env vars - update everything
+                self.privy_token = new_access
+                self.privy_id_token = new_id
+                self._token_valid_until = self._decode_jwt_exp(new_access)
+                
+                # Update session cookies
+                if self.session:
+                    from yarl import URL
+                    self.session.cookie_jar.update_cookies(
+                        {"privy-token": new_access, "privy-id-token": new_id},
+                        URL("https://api.definitive.fi")
+                    )
+                    self.session.cookie_jar.update_cookies(
+                        {"privy-token": new_access, "privy-id-token": new_id},
+                        URL("https://client-api.definitive.fi")
+                    )
+                
+                exp_time = time.strftime("%H:%M:%S", time.localtime(self._token_valid_until))
+                print(f"[TOKEN] Reloaded from env vars, expires at {exp_time}")
+                return True
+            # Else: same token in env vars, no need to reload - DON'T fall through to file
+            return False
         
-        # Fall back to file-based loading
+        # No env var token - fall back to file-based loading (local dev only)
         return self._load_tokens_from_file()
     
     def _maybe_reload_tokens_legacy(self) -> bool:
@@ -1670,12 +1674,11 @@ class ArbEngine:
         print(f"[OK] Position balanced. Trading enabled.")
         notify_ui("event", {"type": "INFO", "message": "Position check passed. Trading enabled."})
         
-        # Load initial token expiry and notify UI
-        print(f"[DEBUG] Loading tokens...")
-        self._load_tokens_from_file()
+        # Check token validity - token should already be loaded from connect()
+        # Just report status, don't reload (avoid overwriting env var token with stale file)
         token_remaining = self._token_valid_until - time.time()
         print(f"[DEBUG] Token expires in {token_remaining:.0f}s")
-        notify_ui("token_status", {"expires_in_sec": token_remaining, "refreshing": False})
+        notify_ui("token_status", {"expires_in_sec": token_remaining, "expires_at": self._token_valid_until, "refreshing": False})
         
         # Get balances ONCE at start of cycle (cached for entry execution)
         print(f"[DEBUG] Fetching DEF balances...")
@@ -1689,6 +1692,8 @@ class ArbEngine:
             def_weth_raw = await self.get_def_weth_balance_raw()
             hl_position = await self.hl_trader.get_position()
             hl_size = hl_position.get("size", 0)
+            
+            print(f"[POSITION DETECT] DEF WETH: {def_weth:.6f}, HL size: {hl_size:.6f}, HL response: {hl_position}")
             
             if def_weth > 0.0001 and hl_size < -0.0001:
                 print(f"\n{'='*60}")
