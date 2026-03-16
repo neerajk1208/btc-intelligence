@@ -125,8 +125,8 @@ class ArbEngine:
     WETH_BASE = "0x4200000000000000000000000000000000000006"
     
     # Thresholds (in basis points)
-    ENTRY_THRESHOLD_BPS = 5.0    # Enter when spread <= 5 bps
-    EXIT_THRESHOLD_BPS = 15.0    # Exit when spread >= 15 bps
+    ENTRY_THRESHOLD_BPS = 0.0    # Enter when spread < 0 bps (DEF cheaper than HL)
+    EXIT_THRESHOLD_BPS = 9.0     # Exit when spread > 9 bps
     MIN_PROFIT_BPS = 2.0         # Minimum net profit to exit
     
     # Fee estimates (bps)
@@ -1637,6 +1637,123 @@ class ArbEngine:
             print(f"  HL success: {hl_success}, error: {hl_result.get('error')}")
             notify_ui("event", {"type": "ERROR", "message": f"Exit failed: DEF={def_success}, HL={hl_success}"})
             return False
+    
+    async def manual_close_def_weth(self) -> dict:
+        """Manually sell all WETH on Definitive. Returns result dict."""
+        print(f"\n[MANUAL] Closing DEF WETH position...")
+        
+        try:
+            # Get current WETH balance
+            weth_balance = await self.get_def_weth_balance()
+            weth_raw = await self.get_def_weth_balance_raw()
+            
+            if weth_balance < 0.0001:
+                return {"success": False, "error": "No WETH to close", "weth": weth_balance}
+            
+            print(f"[MANUAL] Selling {weth_raw} WETH...")
+            
+            # Get quote first
+            quote_payload = {
+                "from": self.WETH_BASE,
+                "to": self.USDC_BASE,
+                "chain": "base",
+                "toChain": "base",
+                "qty": weth_raw,
+                "orderSide": "sell",
+                "type": "market",
+                "degenMode": False,
+                "executionPreference": 2,
+            }
+            
+            async with self.session.post(
+                "https://api.definitive.fi/v1/orders/quote",
+                json=quote_payload,
+                headers=self._def_headers()
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    return {"success": False, "error": f"Quote failed: {resp.status} - {text}"}
+                quote = await resp.json()
+            
+            quote_id = quote.get("quoteId")
+            amount_out = quote.get("buyAmount")
+            
+            # Execute TURBO order
+            order_payload = {
+                "from": self.WETH_BASE,
+                "to": self.USDC_BASE,
+                "chain": "base",
+                "toChain": "base",
+                "qty": weth_raw,
+                "qtyPct": "1",
+                "orderSide": "sell",
+                "type": "market",
+                "orderSourceClient": "ORDER_SOURCE_CLIENT_WEB_APP",
+                "orderSourceProduct": "ORDER_SOURCE_PRODUCT_TURBO",
+                "quickTrade": True,
+                "slippageTolerance": self.SLIPPAGE_TOLERANCE,
+                "quoteId": quote_id,
+                "quotedAmountOut": amount_out,
+            }
+            
+            async with self.session.post(
+                "https://api.definitive.fi/v1/orders",
+                json=order_payload,
+                headers=self._def_headers()
+            ) as resp:
+                text = await resp.text()
+                if resp.status == 200:
+                    result = json.loads(text)
+                    print(f"[MANUAL] DEF WETH sold successfully!")
+                    # Reset position state
+                    self.def_weth_amount = 0
+                    self.def_weth_amount_raw = "0"
+                    return {"success": True, "weth_sold": weth_balance, "result": result}
+                else:
+                    return {"success": False, "error": f"Order failed: {resp.status} - {text}"}
+                    
+        except Exception as e:
+            print(f"[MANUAL] DEF close error: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def manual_close_hl_short(self) -> dict:
+        """Manually close HL ETH short position. Returns result dict."""
+        print(f"\n[MANUAL] Closing HL ETH short position...")
+        
+        try:
+            # Get current position
+            hl_pos = await self.hl_trader.get_position()
+            hl_size = hl_pos.get("size", 0)
+            
+            if hl_size >= -0.0001:  # No short or long
+                return {"success": False, "error": "No short position to close", "size": hl_size}
+            
+            short_size = abs(hl_size)
+            print(f"[MANUAL] Closing {short_size:.4f} ETH short...")
+            
+            # Get current price for the order
+            hl_price = self._get_hl_ws_price()
+            if not hl_price:
+                # Fallback to REST
+                hl_price = await self._get_hl_price_rest()
+            
+            if not hl_price:
+                return {"success": False, "error": "Could not get HL price"}
+            
+            # Close short by buying
+            result = await self.hl_trader.taker_order("buy", size_usd=short_size * hl_price, price_hint=hl_price)
+            
+            if result.get("success"):
+                print(f"[MANUAL] HL short closed successfully!")
+                # Reset position state
+                self.hl_size_eth = 0
+                return {"success": True, "size_closed": short_size, "result": result}
+            else:
+                return {"success": False, "error": result.get("error", "Unknown error")}
+                
+        except Exception as e:
+            print(f"[MANUAL] HL close error: {e}")
+            return {"success": False, "error": str(e)}
     
     async def run_cycle(self) -> bool:
         """Run a single arbitrage cycle (entry → hold → exit)."""

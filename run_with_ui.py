@@ -11,7 +11,8 @@ import argparse
 import os
 from web.app import (
     app, socketio, ui_state, emit_update, log_event,
-    is_engine_stopped, clear_stop_flag, set_restart_callback
+    is_engine_stopped, clear_stop_flag, set_restart_callback,
+    set_close_def_callback, set_close_hl_callback
 )
 import arb_engine
 from arb_engine import ArbEngine, set_stop_check
@@ -20,6 +21,8 @@ from arb_engine import ArbEngine, set_stop_check
 _engine_args = None
 _engine_loop = None
 _restart_requested = threading.Event()
+_current_engine = None  # Reference to running engine for manual close
+_engine_event_loop = None  # Reference to the asyncio event loop
 
 def handle_ui_event(event_type: str, data: dict):
     """Handle UI events from arb engine."""
@@ -169,6 +172,8 @@ def run_web_server():
 
 async def run_engine(args):
     """Run the arbitrage engine."""
+    global _current_engine, _engine_event_loop
+    
     # Handle size arguments - use min_size and max_size with underscores for attribute access
     min_size = getattr(args, 'min_size', None)
     max_size = getattr(args, 'max_size', None)
@@ -178,6 +183,10 @@ async def run_engine(args):
     engine.EXIT_THRESHOLD_BPS = args.exit
     engine.USE_TURBO = not args.prime
     engine.SLIPPAGE_TOLERANCE = f"{args.slip / 10000:.6f}"
+    
+    # Store references for manual close callbacks
+    _current_engine = engine
+    _engine_event_loop = asyncio.get_event_loop()
     
     try:
         await engine.run(num_cycles=args.cycles)
@@ -194,6 +203,7 @@ async def run_engine(args):
         else:
             ui_state["status"] = "IDLE"
             emit_update()
+        _current_engine = None
 
 
 def request_restart():
@@ -201,6 +211,56 @@ def request_restart():
     global _restart_requested
     print("[RESTART] Restart requested from UI")
     _restart_requested.set()
+
+
+def close_def_weth():
+    """Called from UI to manually close DEF WETH position."""
+    global _current_engine, _engine_event_loop
+    
+    if not _current_engine:
+        return {"success": False, "error": "Engine not running"}
+    
+    if not _engine_event_loop:
+        return {"success": False, "error": "Event loop not available"}
+    
+    try:
+        # Run async method from sync context
+        import concurrent.futures
+        future = asyncio.run_coroutine_threadsafe(
+            _current_engine.manual_close_def_weth(),
+            _engine_event_loop
+        )
+        result = future.result(timeout=30)  # 30 second timeout
+        return result
+    except concurrent.futures.TimeoutError:
+        return {"success": False, "error": "Operation timed out"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def close_hl_short():
+    """Called from UI to manually close HL short position."""
+    global _current_engine, _engine_event_loop
+    
+    if not _current_engine:
+        return {"success": False, "error": "Engine not running"}
+    
+    if not _engine_event_loop:
+        return {"success": False, "error": "Event loop not available"}
+    
+    try:
+        # Run async method from sync context
+        import concurrent.futures
+        future = asyncio.run_coroutine_threadsafe(
+            _current_engine.manual_close_hl_short(),
+            _engine_event_loop
+        )
+        result = future.result(timeout=30)  # 30 second timeout
+        return result
+    except concurrent.futures.TimeoutError:
+        return {"success": False, "error": "Operation timed out"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 async def engine_loop(args):
@@ -262,12 +322,12 @@ def main():
     global _engine_args
     
     parser = argparse.ArgumentParser(description="ETH Arbitrage Engine with Web UI")
-    parser.add_argument("--size", type=float, default=100, help="Order size in USD (used if no range set)")
-    parser.add_argument("--min-size", type=float, default=None, help="Minimum order size for random range")
-    parser.add_argument("--max-size", type=float, default=None, help="Maximum order size for random range")
+    parser.add_argument("--size", type=float, default=750, help="Order size in USD (used if no range set)")
+    parser.add_argument("--min-size", type=float, default=750, help="Minimum order size for random range")
+    parser.add_argument("--max-size", type=float, default=1000, help="Maximum order size for random range")
     parser.add_argument("--cycles", type=int, default=999, help="Number of cycles to run")
-    parser.add_argument("--entry", type=float, default=5.0, help="Entry threshold (bps)")
-    parser.add_argument("--exit", type=float, default=15.0, help="Exit threshold (bps)")
+    parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
+    parser.add_argument("--exit", type=float, default=9.0, help="Exit threshold (bps)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode")
     parser.add_argument("--slip", type=float, default=5.0, help="Slippage tolerance in bps")
     
@@ -282,6 +342,10 @@ def main():
     
     # Set restart callback
     set_restart_callback(request_restart)
+    
+    # Set manual close callbacks
+    set_close_def_callback(close_def_weth)
+    set_close_hl_callback(close_hl_short)
     
     # Start web server in background thread
     port = int(os.environ.get('PORT', 5000))

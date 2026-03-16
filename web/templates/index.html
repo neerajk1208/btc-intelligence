@@ -152,6 +152,29 @@
         .btn-restart:hover {
             background: #00cc77;
         }
+        .btn-close {
+            background: #ff8800;
+            color: white;
+            font-size: 0.85em;
+            padding: 8px 12px;
+        }
+        .btn-close:hover {
+            background: #ffaa33;
+        }
+        .manual-close-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #333;
+        }
+        .manual-close-section h4 {
+            margin: 0 0 10px 0;
+            font-size: 0.9em;
+            color: #888;
+        }
+        .close-buttons {
+            display: flex;
+            gap: 10px;
+        }
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
@@ -251,6 +274,13 @@
                 <div class="control-buttons">
                     <button class="btn btn-stop" id="btn-stop" onclick="stopEngine()" disabled>⏹ STOP</button>
                     <button class="btn btn-restart" id="btn-restart" onclick="restartEngine()">▶ START</button>
+                </div>
+                <div class="manual-close-section">
+                    <h4>Manual Position Close</h4>
+                    <div class="close-buttons">
+                        <button class="btn btn-close" id="btn-close-def" onclick="closeDefWeth()">Close DEF WETH</button>
+                        <button class="btn btn-close" id="btn-close-hl" onclick="closeHlShort()">Close HL Short</button>
+                    </div>
                 </div>
             </div>
             
@@ -693,6 +723,42 @@
                 addEvent('INFO', 'Restart command sent...');
             }
         }
+        
+        function closeDefWeth() {
+            if (confirm('Are you sure you want to SELL all WETH on Definitive?')) {
+                document.getElementById('btn-close-def').disabled = true;
+                document.getElementById('btn-close-def').textContent = 'Closing...';
+                socket.emit('close_def_weth');
+                addEvent('WARNING', 'Close DEF WETH command sent...');
+            }
+        }
+        
+        function closeHlShort() {
+            if (confirm('Are you sure you want to CLOSE the HL ETH short position?')) {
+                document.getElementById('btn-close-hl').disabled = true;
+                document.getElementById('btn-close-hl').textContent = 'Closing...';
+                socket.emit('close_hl_short');
+                addEvent('WARNING', 'Close HL short command sent...');
+            }
+        }
+        
+        // Handle close results
+        socket.on('close_result', function(data) {
+            const btn = data.platform === 'def' ? 
+                document.getElementById('btn-close-def') : 
+                document.getElementById('btn-close-hl');
+            
+            btn.disabled = false;
+            btn.textContent = data.platform === 'def' ? 'Close DEF WETH' : 'Close HL Short';
+            
+            if (data.success) {
+                addEvent('INFO', data.message);
+                alert('Success: ' + data.message);
+            } else {
+                addEvent('ERROR', data.message);
+                alert('Failed: ' + data.message);
+            }
+        });
         
         // Token countdown - updates every second locally (no API calls)
         window.tokenExpiresAt = 0;

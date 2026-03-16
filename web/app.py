@@ -19,11 +19,23 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # Engine control
 engine_stop_flag = threading.Event()
 engine_restart_callback = None  # Set by run_with_ui.py
+engine_close_def_callback = None  # Set by run_with_ui.py
+engine_close_hl_callback = None  # Set by run_with_ui.py
 
 def set_restart_callback(callback):
     """Set the callback function to restart the engine."""
     global engine_restart_callback
     engine_restart_callback = callback
+
+def set_close_def_callback(callback):
+    """Set the callback function to close DEF WETH position."""
+    global engine_close_def_callback
+    engine_close_def_callback = callback
+
+def set_close_hl_callback(callback):
+    """Set the callback function to close HL short position."""
+    global engine_close_hl_callback
+    engine_close_hl_callback = callback
 
 def is_engine_stopped():
     """Check if the engine should stop."""
@@ -283,6 +295,52 @@ def handle_restart():
             log_event("ERROR", f"Restart failed: {e}")
     else:
         log_event("WARNING", "Restart callback not set - manual restart required")
+
+@socketio.on('close_def_weth')
+def handle_close_def():
+    """Handle request to close DEF WETH position."""
+    global engine_close_def_callback
+    print("[UI] Close DEF WETH requested")
+    log_event("WARNING", "Manual close DEF WETH requested")
+    
+    if engine_close_def_callback:
+        try:
+            result = engine_close_def_callback()
+            if result.get("success"):
+                log_event("INFO", f"DEF WETH closed: {result.get('weth_sold', 0):.6f} WETH")
+                emit('close_result', {"platform": "def", "success": True, "message": f"Sold {result.get('weth_sold', 0):.6f} WETH"})
+            else:
+                log_event("ERROR", f"DEF close failed: {result.get('error')}")
+                emit('close_result', {"platform": "def", "success": False, "message": result.get('error')})
+        except Exception as e:
+            log_event("ERROR", f"DEF close error: {e}")
+            emit('close_result', {"platform": "def", "success": False, "message": str(e)})
+    else:
+        log_event("WARNING", "Close DEF callback not set")
+        emit('close_result', {"platform": "def", "success": False, "message": "Engine not running"})
+
+@socketio.on('close_hl_short')
+def handle_close_hl():
+    """Handle request to close HL short position."""
+    global engine_close_hl_callback
+    print("[UI] Close HL short requested")
+    log_event("WARNING", "Manual close HL short requested")
+    
+    if engine_close_hl_callback:
+        try:
+            result = engine_close_hl_callback()
+            if result.get("success"):
+                log_event("INFO", f"HL short closed: {result.get('size_closed', 0):.4f} ETH")
+                emit('close_result', {"platform": "hl", "success": True, "message": f"Closed {result.get('size_closed', 0):.4f} ETH short"})
+            else:
+                log_event("ERROR", f"HL close failed: {result.get('error')}")
+                emit('close_result', {"platform": "hl", "success": False, "message": result.get('error')})
+        except Exception as e:
+            log_event("ERROR", f"HL close error: {e}")
+            emit('close_result', {"platform": "hl", "success": False, "message": str(e)})
+    else:
+        log_event("WARNING", "Close HL callback not set")
+        emit('close_result', {"platform": "hl", "success": False, "message": "Engine not running"})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=False)
