@@ -1891,6 +1891,12 @@ class ArbEngine:
                 
                 notify_ui("event", {"type": "RESUME", "message": f"Resumed position: {def_weth:.4f} WETH, {abs(hl_size):.4f} ETH short"})
                 notify_ui("position", {"in_position": True, "entry_spread_bps": 0, "status": "RESUMED"})
+                
+                # Update balances on resume
+                hl_balance = await self.get_hl_balance()
+                print(f"[RESUME BALANCES] DEF USDC: ${cached_usdc_before:,.2f}, HL: ${hl_balance:,.2f}")
+                notify_ui("balances", {"def_usdc": cached_usdc_before, "hl_usdc": hl_balance})
+                
                 print(f"[RESUME] Position loaded. Skipping to exit monitoring...")
             elif def_weth > 0.0001 and hl_size >= 0:
                 print(f"\n[WARNING] DEF has WETH ({def_weth:.6f}) but no HL short - UNHEDGED!")
@@ -1947,9 +1953,12 @@ class ArbEngine:
                             notify_ui("status", {"status": "PAUSED", "mode": "PAUSED", "pause_reason": "Entry confirmation failed - position mismatch"})
                             return False  # PAUSE - don't continue
                         
+                        # Update balances after confirmed entry
                         cached_usdc_before = await self.get_def_balance()
                         cached_weth_before = await self.get_def_weth_balance()
-                        print(f"[POST-ENTRY] Updated DEF USDC: ${cached_usdc_before:,.2f}, WETH: {cached_weth_before:.6f}")
+                        hl_balance = await self.get_hl_balance()
+                        print(f"[POST-ENTRY BALANCES] DEF USDC: ${cached_usdc_before:,.2f}, WETH: {cached_weth_before:.6f}, HL: ${hl_balance:,.2f}")
+                        notify_ui("balances", {"def_usdc": cached_usdc_before, "hl_usdc": hl_balance})
                         
                         # Hold period before searching for exit (avoids rate limits, lets position settle)
                         hold_seconds = 60
@@ -2047,6 +2056,12 @@ class ArbEngine:
                             set_pause_status(True, "Exit confirmation failed - residual position")
                             notify_ui("status", {"status": "PAUSED", "mode": "PAUSED", "pause_reason": "Exit confirmation failed - residual position"})
                             return False  # PAUSE - don't continue
+                        
+                        # Update balances after confirmed exit
+                        def_balance = await self.get_def_balance()
+                        hl_balance = await self.get_hl_balance()
+                        print(f"[POST-EXIT BALANCES] DEF USDC: ${def_balance:,.2f}, HL: ${hl_balance:,.2f}, TOTAL: ${def_balance + hl_balance:,.2f}")
+                        notify_ui("balances", {"def_usdc": def_balance, "hl_usdc": hl_balance})
                         
                         return True
                 else:
