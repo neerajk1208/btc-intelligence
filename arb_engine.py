@@ -1120,6 +1120,7 @@ class ArbEngine:
         
         print(f"\n{'='*40}")
         print(f"ENTRY SIGNAL: Spread = {spread_bps:+.1f} bps")
+        print(f"[ENTRY EXECUTION] Price gap: {self._price_gap_ms:.0f}ms")
         print(f"{'='*40}")
         
         weth_to_buy = self.size_usd / def_price
@@ -1399,6 +1400,7 @@ class ArbEngine:
         
         print(f"\n{'='*40}")
         print(f"EXIT SIGNAL: Spread = {spread_bps:+.1f} bps")
+        print(f"[EXIT EXECUTION] Price gap: {self._price_gap_ms:.0f}ms")
         print(f"{'='*40}")
         
         mode = "TURBO" if self.USE_TURBO else "PRIME"
@@ -1892,10 +1894,12 @@ class ArbEngine:
                 notify_ui("event", {"type": "RESUME", "message": f"Resumed position: {def_weth:.4f} WETH, {abs(hl_size):.4f} ETH short"})
                 notify_ui("position", {"in_position": True, "entry_spread_bps": 0, "status": "RESUMED"})
                 
-                # Update balances on resume
+                # Update balances on resume (include WETH value)
                 hl_balance = await self.get_hl_balance()
-                print(f"[RESUME BALANCES] DEF USDC: ${cached_usdc_before:,.2f}, HL: ${hl_balance:,.2f}")
-                notify_ui("balances", {"def_usdc": cached_usdc_before, "hl_usdc": hl_balance})
+                weth_value = def_weth * self.def_entry_price
+                def_total = cached_usdc_before + weth_value
+                print(f"[RESUME BALANCES] DEF USDC: ${cached_usdc_before:,.2f} + WETH: ${weth_value:,.2f} = ${def_total:,.2f}, HL: ${hl_balance:,.2f}")
+                notify_ui("balances", {"def_usdc": def_total, "hl_usdc": hl_balance})
                 
                 print(f"[RESUME] Position loaded. Skipping to exit monitoring...")
             elif def_weth > 0.0001 and hl_size >= 0:
@@ -1953,12 +1957,14 @@ class ArbEngine:
                             notify_ui("status", {"status": "PAUSED", "mode": "PAUSED", "pause_reason": "Entry confirmation failed - position mismatch"})
                             return False  # PAUSE - don't continue
                         
-                        # Update balances after confirmed entry
+                        # Update balances after confirmed entry (include WETH value)
                         cached_usdc_before = await self.get_def_balance()
                         cached_weth_before = await self.get_def_weth_balance()
                         hl_balance = await self.get_hl_balance()
-                        print(f"[POST-ENTRY BALANCES] DEF USDC: ${cached_usdc_before:,.2f}, WETH: {cached_weth_before:.6f}, HL: ${hl_balance:,.2f}")
-                        notify_ui("balances", {"def_usdc": cached_usdc_before, "hl_usdc": hl_balance})
+                        weth_value = cached_weth_before * self.def_entry_price
+                        def_total = cached_usdc_before + weth_value
+                        print(f"[POST-ENTRY BALANCES] DEF USDC: ${cached_usdc_before:,.2f} + WETH: ${weth_value:,.2f} = ${def_total:,.2f}, HL: ${hl_balance:,.2f}")
+                        notify_ui("balances", {"def_usdc": def_total, "hl_usdc": hl_balance})
                         
                         # Hold period before searching for exit (avoids rate limits, lets position settle)
                         hold_seconds = 60
@@ -2077,14 +2083,28 @@ class ArbEngine:
             return
         
         try:
-            # Get starting balances
-            def_start = await self.get_def_balance()
+            # Get starting balances (include WETH value if any)
+            def_usdc = await self.get_def_balance()
+            def_weth = await self.get_def_weth_balance()
             hl_start = await self.get_hl_balance()
+            
+            # If we have WETH, we need a price to value it
+            weth_value = 0.0
+            if def_weth > 0.0001:
+                # Quick price fetch to value existing WETH
+                _, def_price = await self._get_prices_entry()
+                if def_price:
+                    weth_value = def_weth * def_price
+            
+            def_start = def_usdc + weth_value
             total_start = def_start + hl_start
             
             print(f"\n{'='*60}")
             print(f"STARTING BALANCES")
-            print(f"  Definitive (USDC): ${def_start:,.2f}")
+            if weth_value > 0:
+                print(f"  Definitive (USDC): ${def_usdc:,.2f} + WETH: ${weth_value:,.2f} = ${def_start:,.2f}")
+            else:
+                print(f"  Definitive (USDC): ${def_start:,.2f}")
             print(f"  Hyperliquid (USDC): ${hl_start:,.2f}")
             print(f"  TOTAL: ${total_start:,.2f}")
             print(f"{'='*60}")
