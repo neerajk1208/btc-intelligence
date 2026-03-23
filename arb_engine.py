@@ -166,6 +166,10 @@ class ArbEngine:
         self.cycle_logs: list[CycleLog] = []
         self.cycle_count = 0
         
+        # Cumulative volume tracking
+        self.total_def_volume = 0.0  # Total DEF volume (USDC)
+        self.total_hl_volume = 0.0   # Total HL volume (USDC notional)
+        
         # Auth - Privy (for legacy endpoints)
         self.privy_token = os.getenv("PRIVY_ACCESS_TOKEN")
         self.privy_id_token = os.getenv("PRIVY_ID_TOKEN")
@@ -1352,6 +1356,10 @@ class ArbEngine:
             notify_ui("position", {"in_position": True, "entry_spread_bps": spread_bps, "status": "IN_POSITION"})
             self._emit_latency_update()
             
+            # Track volume (DEF buy + HL short)
+            self.total_def_volume += usdc_spent
+            self.total_hl_volume += usdc_spent  # HL short notional ≈ DEF buy
+            
             return True
         else:
             print(f"\n[ENTRY FAILED]")
@@ -1611,6 +1619,10 @@ class ArbEngine:
             self._last_prime_buy_amount = ""
             self._last_prime_sell_quote_id = ""
             self._last_prime_sell_amount = ""
+            
+            # Track volume (DEF sell + HL close)
+            self.total_def_volume += usdc_received
+            self.total_hl_volume += self.hl_size_eth * hl_exit_price
             
             return True
         else:
@@ -2013,6 +2025,7 @@ class ArbEngine:
                         
                         print(f"[POST-EXIT BALANCES] DEF: ${def_balance:,.2f}, HL: ${hl_balance:,.2f}")
                         print(f"[CYCLE P&L] Start: ${cycle_start_total:,.2f} → End: ${cycle_end_total:,.2f} = ACTUAL P&L: ${actual_pnl:+.2f}")
+                        print(f"[VOLUME] DEF: ${self.total_def_volume:,.2f} | HL: ${self.total_hl_volume:,.2f} | Total: ${self.total_def_volume + self.total_hl_volume:,.2f}")
                         notify_ui("balances", {"def_usdc": def_balance, "hl_usdc": hl_balance})
                         notify_ui("cycle_complete", {"realized_pnl": actual_pnl, "start_total": cycle_start_total, "end_total": cycle_end_total})
                         
