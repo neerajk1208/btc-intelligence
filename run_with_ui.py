@@ -80,7 +80,7 @@ def handle_ui_event(event_type: str, data: dict):
     
     elif event_type == "thresholds":
         ui_state["entry_threshold_bps"] = data.get("entry_bps", 0)
-        ui_state["exit_threshold_bps"] = data.get("exit_bps", 6)
+        ui_state["exit_threshold_bps"] = data.get("exit_bps", 4)
         emit_update()
     
     elif event_type == "warmup":
@@ -327,7 +327,7 @@ def main():
     parser.add_argument("--max-size", type=float, default=1000, help="Maximum order size for random range")
     parser.add_argument("--cycles", type=int, default=999, help="Number of cycles to run")
     parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
-    parser.add_argument("--exit", type=float, default=6.0, help="Exit threshold (bps)")
+    parser.add_argument("--exit", type=float, default=4.0, help="Exit threshold (bps)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode")
     parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps")
     

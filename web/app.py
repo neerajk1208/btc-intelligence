@@ -67,7 +67,7 @@ ui_state = {
     },
     # Thresholds for UI display
     "entry_threshold_bps": 0,
-    "exit_threshold_bps": 6,
+    "exit_threshold_bps": 4,
     # Last cycle summary
     "last_cycle": {
         "entry_spread": 0,

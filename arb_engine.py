@@ -126,7 +126,7 @@ class ArbEngine:
     
     # Thresholds (in basis points)
     ENTRY_THRESHOLD_BPS = 0.0    # Enter when spread < 0 bps (DEF cheaper than HL)
-    EXIT_THRESHOLD_BPS = 6.0     # Exit when spread >= 6 bps
+    EXIT_THRESHOLD_BPS = 4.0     # Exit when spread >= 4 bps
     MIN_PROFIT_BPS = 2.0         # Minimum net profit to exit
     
     # Fee estimates (bps)
@@ -2120,7 +2120,7 @@ async def main():
     parser.add_argument("--size", type=float, default=750, help="Order size in USD")
     parser.add_argument("--cycles", type=int, default=1, help="Number of cycles to run")
     parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
-    parser.add_argument("--exit", type=float, default=6.0, help="Exit threshold (bps)")
+    parser.add_argument("--exit", type=float, default=4.0, help="Exit threshold (bps)")
     parser.add_argument("--turbo", action="store_true", help="Use TURBO mode (default)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode (with quote)")
     parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps (TURBO only)")
