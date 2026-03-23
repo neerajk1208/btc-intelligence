@@ -126,7 +126,7 @@ class ArbEngine:
     
     # Thresholds (in basis points)
     ENTRY_THRESHOLD_BPS = 0.0    # Enter when spread < 0 bps (DEF cheaper than HL)
-    EXIT_THRESHOLD_BPS = 9.0     # Exit when spread > 9 bps
+    EXIT_THRESHOLD_BPS = 6.0     # Exit when spread >= 6 bps
     MIN_PROFIT_BPS = 2.0         # Minimum net profit to exit
     
     # Fee estimates (bps)
@@ -804,6 +804,9 @@ class ArbEngine:
         """
         print("\n[CONFIRM] Verifying entry positions...")
         
+        # Wait 1s before querying to avoid rate limits (HL allows ~1 req/sec)
+        await asyncio.sleep(1)
+        
         # Query actual positions with retry
         # HL info endpoints allow ~1 req/sec, but if 429'd we must wait 10s
         max_retries = 3
@@ -899,6 +902,9 @@ class ArbEngine:
         Returns True if flat, False if residual position.
         """
         print("\n[CONFIRM] Verifying exit positions (should be flat)...")
+        
+        # Wait 1s before querying to avoid rate limits (HL allows ~1 req/sec)
+        await asyncio.sleep(1)
         
         # Query actual positions
         def_weth = await self.get_def_weth_balance()
@@ -1944,6 +1950,14 @@ class ArbEngine:
                         cached_usdc_before = await self.get_def_balance()
                         cached_weth_before = await self.get_def_weth_balance()
                         print(f"[POST-ENTRY] Updated DEF USDC: ${cached_usdc_before:,.2f}, WETH: {cached_weth_before:.6f}")
+                        
+                        # Hold period before searching for exit (avoids rate limits, lets position settle)
+                        hold_seconds = 60
+                        print(f"[HOLD] Waiting {hold_seconds}s before searching for exit...")
+                        notify_ui("event", {"type": "INFO", "message": f"Holding position for {hold_seconds}s"})
+                        await asyncio.sleep(hold_seconds)
+                        print(f"[HOLD] Hold period complete, searching for exit opportunity...")
+                        
                         break
                     else:
                         # Entry failed - check if we have unhedged position (partial fill)
@@ -2106,7 +2120,7 @@ async def main():
     parser.add_argument("--size", type=float, default=750, help="Order size in USD")
     parser.add_argument("--cycles", type=int, default=1, help="Number of cycles to run")
     parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
-    parser.add_argument("--exit", type=float, default=9.0, help="Exit threshold (bps)")
+    parser.add_argument("--exit", type=float, default=6.0, help="Exit threshold (bps)")
     parser.add_argument("--turbo", action="store_true", help="Use TURBO mode (default)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode (with quote)")
     parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps (TURBO only)")

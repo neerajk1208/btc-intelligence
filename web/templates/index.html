@@ -542,7 +542,7 @@
             // Threshold indicator - show target and whether we're hitting it
             const thresholdEl = document.getElementById('threshold-indicator');
             const entryThresh = state.entry_threshold_bps !== undefined ? state.entry_threshold_bps : 0;
-            const exitThresh = state.exit_threshold_bps !== undefined ? state.exit_threshold_bps : 9;
+            const exitThresh = state.exit_threshold_bps !== undefined ? state.exit_threshold_bps : 6;
             
             if (mode === 'ENTRY' || mode === 'WARMUP') {
                 const isGood = spread <= entryThresh;
