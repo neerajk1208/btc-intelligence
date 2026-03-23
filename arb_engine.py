@@ -1622,16 +1622,11 @@ class ArbEngine:
             
             print(f"  DEF: USDC received ${usdc_received:.2f}, WETH sold {weth_sold:.6f}")
             
-            # DEF P&L: (exit - entry) * amount
+            # DEF P&L: (exit - entry) * amount (for reference, actual P&L calculated from balances)
             def_pnl = (def_exit_price - self.def_entry_price) * self.def_weth_amount
             
             # HL P&L: (entry - exit) * amount (short position)
             hl_pnl = (self.hl_entry_price - hl_exit_price) * self.hl_size_eth
-            
-            # Estimate fees
-            total_fees = (self.size_usd * (self.DEF_FEE_BPS + self.HL_FEE_BPS) * 2) / 10000
-            
-            net_pnl = def_pnl + hl_pnl - total_fees
             
             self.cycle_count += 1
             
@@ -1646,22 +1641,19 @@ class ArbEngine:
             total_slip = (self._actual_entry_spread - self._expected_entry_spread) + exit_slip
             
             print(f"\n[EXIT COMPLETE]")
-            print(f"  DEF: Sold @ ${def_exit_price:.2f} (quoted: ${def_price:.2f}) | P&L: ${def_pnl:+.4f}")
-            print(f"  HL:  Closed @ ${hl_exit_price:.2f} | P&L: ${hl_pnl:+.4f}")
-            print(f"  Fees: ~${total_fees:.4f}")
+            print(f"  DEF: Sold @ ${def_exit_price:.2f} (quoted: ${def_price:.2f})")
+            print(f"  HL:  Closed @ ${hl_exit_price:.2f}")
             print(f"  Exit spread: {spread_bps:+.1f} bps (expected) → {self._actual_exit_spread:+.1f} bps (actual)")
             print(f"  Exit slippage: {exit_slip:+.1f} bps | Total cycle slippage: {total_slip:+.1f} bps")
             print(f"  Latency: DEF {def_latency_ms:.0f}ms, HL {hl_latency_ms:.0f}ms")
             
-            # Send detailed cycle summary to UI
-            notify_ui("event", {"type": "CYCLE_COMPLETE", "message": f"Cycle complete: Net P&L ${net_pnl:+.4f} (fees ${total_fees:.4f})"})
-            notify_ui("cycle_complete", {
-                "realized_pnl": net_pnl,
-                "fees": total_fees,
-                "def_pnl": def_pnl,
-                "hl_pnl": hl_pnl,
+            # Send trade execution details to UI (actual P&L sent from run_cycle after balance check)
+            notify_ui("event", {"type": "EXIT_COMPLETE", "message": f"Exit complete - awaiting balance confirmation"})
+            notify_ui("exit_details", {
                 "entry_spread": self.entry_spread_bps,
                 "exit_spread": spread_bps,
+                "exit_slippage_bps": exit_slip,
+                "total_slippage_bps": total_slip,
                 "def_latency_ms": def_latency_ms,
                 "hl_latency_ms": hl_latency_ms,
                 "def_entry_price": self.def_entry_price,
@@ -1673,7 +1665,6 @@ class ArbEngine:
             self._emit_latency_update()
             self._emit_cycle_bps()
             
-            print(f"  NET P&L: ${net_pnl:+.4f}")
             print(f"  Spread captured: {spread_bps - self.entry_spread_bps:.1f} bps")
             
             # Reset ALL state for clean next cycle
@@ -1858,11 +1849,22 @@ class ArbEngine:
         print(f"[DEBUG] Token expires in {token_remaining:.0f}s")
         notify_ui("token_status", {"expires_in_sec": token_remaining, "expires_at": self._token_valid_until, "refreshing": False})
         
-        # Get balances ONCE at start of cycle (cached for entry execution)
-        print(f"[DEBUG] Fetching DEF balances...")
+        # Get balances ONCE at start of cycle (before any trading)
+        print(f"[DEBUG] Fetching balances...")
         cached_usdc_before = await self.get_def_balance()
         cached_weth_before = await self.get_def_weth_balance()
-        print(f"[CYCLE START] Cached DEF USDC: ${cached_usdc_before:,.2f}, WETH: {cached_weth_before:.6f}")
+        cached_hl_before = await self.get_hl_balance()
+        
+        # Calculate cycle start total (for accurate P&L)
+        # If we have WETH, we need current price to value it
+        weth_value_start = 0.0
+        if cached_weth_before > 0.0001:
+            hl_price, def_price = await self._get_prices_entry()
+            if def_price:
+                weth_value_start = cached_weth_before * def_price
+        
+        cycle_start_total = cached_usdc_before + weth_value_start + cached_hl_before
+        print(f"[CYCLE START] DEF: ${cached_usdc_before:,.2f} + WETH: ${weth_value_start:,.2f} + HL: ${cached_hl_before:,.2f} = ${cycle_start_total:,.2f}")
         
         # DETECT EXISTING POSITIONS - resume if we have open positions
         if not self.in_position:
@@ -2063,11 +2065,16 @@ class ArbEngine:
                             notify_ui("status", {"status": "PAUSED", "mode": "PAUSED", "pause_reason": "Exit confirmation failed - residual position"})
                             return False  # PAUSE - don't continue
                         
-                        # Update balances after confirmed exit
+                        # Update balances after confirmed exit and calculate ACTUAL P&L
                         def_balance = await self.get_def_balance()
                         hl_balance = await self.get_hl_balance()
-                        print(f"[POST-EXIT BALANCES] DEF USDC: ${def_balance:,.2f}, HL: ${hl_balance:,.2f}, TOTAL: ${def_balance + hl_balance:,.2f}")
+                        cycle_end_total = def_balance + hl_balance
+                        actual_pnl = cycle_end_total - cycle_start_total
+                        
+                        print(f"[POST-EXIT BALANCES] DEF: ${def_balance:,.2f}, HL: ${hl_balance:,.2f}")
+                        print(f"[CYCLE P&L] Start: ${cycle_start_total:,.2f} → End: ${cycle_end_total:,.2f} = ACTUAL P&L: ${actual_pnl:+.2f}")
                         notify_ui("balances", {"def_usdc": def_balance, "hl_usdc": hl_balance})
+                        notify_ui("cycle_complete", {"realized_pnl": actual_pnl, "start_total": cycle_start_total, "end_total": cycle_end_total})
                         
                         return True
                 else:
