@@ -186,13 +186,15 @@ class ArbEngine:
         # Price sync tracking (WebSocket eliminates need for latency calibration)
         self._calibration_count = 0
         
-        # PRIME quote storage for TURBO execution (BUY for entry)
+        # PRIME quote storage for TURBO/PRIME execution (BUY for entry)
         self._last_prime_quote_id = ""
         self._last_prime_buy_amount = ""
+        self._last_prime_price_impact = "0"
         
-        # PRIME SELL quote storage for TURBO exit
+        # PRIME SELL quote storage for TURBO/PRIME exit
         self._last_prime_sell_quote_id = ""
         self._last_prime_sell_amount = ""
+        self._last_prime_sell_price_impact = "0"
         
         # Warmup tracking
         self._engine_start_time = 0
@@ -621,9 +623,11 @@ class ArbEngine:
                     data = await resp.json()
                     quote_id = data.get("quoteId", "")
                     buy_amount = float(data.get("buyAmount", 0))
+                    price_impact = data.get("estimatedPriceImpact", "0")
                     if buy_amount > 0:
                         self._last_prime_quote_id = quote_id
                         self._last_prime_buy_amount = str(buy_amount)
+                        self._last_prime_price_impact = str(price_impact) if price_impact else "0"
                         def_price = self.size_usd / buy_amount  # USDC per WETH
                 else:
                     text = await resp.text()
@@ -724,10 +728,12 @@ class ArbEngine:
                     quote_id = data.get("quoteId", "")
                     # For SELL: buyAmount is USDC we receive for selling WETH
                     sell_usdc = float(data.get("buyAmount", 0))
+                    price_impact = data.get("estimatedPriceImpact", "0")
                     weth_qty = float(weth_amount)
                     if sell_usdc > 0 and weth_qty > 0:
                         self._last_prime_sell_quote_id = quote_id
                         self._last_prime_sell_amount = str(sell_usdc)
+                        self._last_prime_sell_price_impact = str(price_impact) if price_impact else "0"
                         def_price = sell_usdc / weth_qty  # USDC per WETH
                 else:
                     text = await resp.text()
@@ -1191,48 +1197,7 @@ class ArbEngine:
                 amount_out = str(self.size_usd / def_price)
                 
             else:
-                # PRIME: Quote first, then order
-                quote_start = time.time()
-                quote_payload = {
-                    "from": self.USDC_BASE,
-                    "to": self.WETH_BASE,
-                    "chain": "base",
-                    "toChain": "base",
-                    "qty": str(self.size_usd),
-                    "orderSide": "buy",
-                    "type": "market",
-                    "degenMode": False,
-                    "executionPreference": 2,
-                }
-                
-                async with self.session.post(
-                    "https://api.definitive.fi/v1/orders/quote",
-                    json=quote_payload,
-                    headers=self._def_headers()
-                ) as resp:
-                    if resp.status != 200:
-                        print(f"[DEF] Quote failed: {resp.status}")
-                        return False
-                    quote = await resp.json()
-                
-                quote_latency = (time.time() - quote_start) * 1000
-                
-                quote_id = quote.get("quoteId")
-                amount_out = quote.get("buyAmount")
-                price_impact = quote.get("estimatedPriceImpact")
-                
-                # Validate price impact before executing ANY orders
-                price_impact_bps = float(price_impact or 0) * 10000  # Convert to bps
-                max_impact_bps = float(self.SLIPPAGE_TOLERANCE) * 10000
-                
-                if price_impact_bps > max_impact_bps:
-                    print(f"[ENTRY REJECTED] Price impact {price_impact_bps:.1f} bps > threshold {max_impact_bps:.1f} bps")
-                    print(f"[ENTRY REJECTED] NOT executing DEF or HL orders")
-                    notify_ui("event", {"type": "REJECTED", "message": f"Entry rejected: price impact {price_impact_bps:.1f} bps > {max_impact_bps:.1f} bps threshold"})
-                    return False
-                
-                print(f"[QUOTE OK] Price impact {price_impact_bps:.1f} bps <= {max_impact_bps:.1f} bps - proceeding")
-                
+                # PRIME: Same optimized flow as TURBO but with PRIME payload (no extra quote fetch)
                 async def def_order():
                     start = time.time()
                     order_payload = {
@@ -1247,9 +1212,9 @@ class ArbEngine:
                         "maxPriorityFee": None,
                         "slippageTolerance": None,
                         "bridgeQuoteId": "",
-                        "quoteId": quote_id,
-                        "quotedAmountOut": amount_out,
-                        "quotedPriceImpact": price_impact,
+                        "quoteId": self._last_prime_quote_id,
+                        "quotedAmountOut": self._last_prime_buy_amount,
+                        "quotedPriceImpact": self._last_prime_price_impact,
                         "orderSourceClient": "ORDER_SOURCE_CLIENT_WEB_APP",
                     }
                     
@@ -1259,7 +1224,8 @@ class ArbEngine:
                         headers=self._def_headers()
                     ) as resp:
                         latency = (time.time() - start) * 1000
-                        return resp.status == 200, await resp.json(), latency + quote_latency
+                        result = await resp.json()
+                        return resp.status == 200, result, latency
                 
                 async def hl_order():
                     start = time.time()
@@ -1272,6 +1238,9 @@ class ArbEngine:
                 
                 (def_success, def_result, def_latency_ms), (hl_result, hl_latency_ms) = await asyncio.gather(def_task, hl_task)
                 hl_success = hl_result.get("success", False)
+                
+                # For PRIME, use stored amount_out
+                amount_out = self._last_prime_buy_amount
             
             print(f"\n[LATENCY] DEF ({mode}): {def_latency_ms:.0f}ms | HL: {hl_latency_ms:.0f}ms")
             print(f"[DEF RESPONSE] {def_result}")
@@ -1476,49 +1445,7 @@ class ArbEngine:
                 # usdc_before_exit passed in as parameter
                 
             else:
-                # PRIME: Quote first, then order
-                quote_start = time.time()
-                quote_payload = {
-                    "from": self.WETH_BASE,
-                    "to": self.USDC_BASE,
-                    "chain": "base",
-                    "toChain": "base",
-                    "qty": exact_weth_balance_str,
-                    "orderSide": "sell",
-                    "type": "market",
-                    "degenMode": False,
-                    "executionPreference": 2,
-                }
-                
-                async with self.session.post(
-                    "https://api.definitive.fi/v1/orders/quote",
-                    json=quote_payload,
-                    headers=self._def_headers()
-                ) as resp:
-                    if resp.status != 200:
-                        print(f"[DEF] Quote failed: {resp.status}")
-                        return False
-                    quote = await resp.json()
-                
-                quote_latency = (time.time() - quote_start) * 1000
-                
-                quote_id = quote.get("quoteId")
-                amount_out = quote.get("buyAmount")
-                price_impact = quote.get("estimatedPriceImpact")
-                def_fee = float(quote.get("estimatedFeeNotional", 0))
-                
-                # Validate price impact before executing ANY orders
-                price_impact_bps = float(price_impact or 0) * 10000  # Convert to bps
-                max_impact_bps = float(self.SLIPPAGE_TOLERANCE) * 10000
-                
-                if price_impact_bps > max_impact_bps:
-                    print(f"[EXIT REJECTED] Price impact {price_impact_bps:.1f} bps > threshold {max_impact_bps:.1f} bps")
-                    print(f"[EXIT REJECTED] NOT executing DEF or HL orders - position still open")
-                    notify_ui("event", {"type": "REJECTED", "message": f"Exit rejected: price impact {price_impact_bps:.1f} bps > {max_impact_bps:.1f} bps threshold"})
-                    return False
-                
-                print(f"[QUOTE OK] Price impact {price_impact_bps:.1f} bps <= {max_impact_bps:.1f} bps - proceeding")
-                
+                # PRIME: Same optimized flow as TURBO but with PRIME payload (no extra quote fetch)
                 async def def_order():
                     start = time.time()
                     order_payload = {
@@ -1533,9 +1460,9 @@ class ArbEngine:
                         "maxPriorityFee": None,
                         "slippageTolerance": None,
                         "bridgeQuoteId": "",
-                        "quoteId": quote_id,
-                        "quotedAmountOut": amount_out,
-                        "quotedPriceImpact": price_impact,
+                        "quoteId": self._last_prime_sell_quote_id,
+                        "quotedAmountOut": self._last_prime_sell_amount,
+                        "quotedPriceImpact": self._last_prime_sell_price_impact,
                         "orderSourceClient": "ORDER_SOURCE_CLIENT_WEB_APP",
                     }
                     
@@ -1550,7 +1477,7 @@ class ArbEngine:
                             result = json.loads(text)
                         except:
                             result = {"error": text}
-                        return resp.status == 200, result, latency + quote_latency
+                        return resp.status == 200, result, latency
                 
                 async def hl_order():
                     start = time.time()
