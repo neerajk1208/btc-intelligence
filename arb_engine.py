@@ -800,10 +800,29 @@ class ArbEngine:
         """
         print("\n[CONFIRM] Verifying entry positions...")
         
-        # Query actual positions
-        def_weth = await self.get_def_weth_balance()
-        hl_pos = await self.hl_trader.get_position()
-        hl_short = abs(hl_pos.get("size", 0))  # Short is negative, take abs
+        # Query actual positions with retry (HL may take a moment to settle)
+        max_retries = 5
+        retry_delay = 1  # seconds
+        
+        def_weth = 0
+        hl_short = 0
+        
+        for attempt in range(max_retries):
+            def_weth = await self.get_def_weth_balance()
+            hl_pos = await self.hl_trader.get_position()
+            hl_short = abs(hl_pos.get("size", 0))  # Short is negative, take abs
+            
+            # If both positions show up, we're good
+            if def_weth > 0.0001 and hl_short > 0.0001:
+                print(f"[CONFIRM] Positions detected on attempt {attempt + 1}: DEF {def_weth:.6f}, HL {hl_short:.4f}")
+                break
+            
+            # If HL shows 0 but we expect a position, retry
+            if self.hl_size_eth > 0.0001 and hl_short < 0.0001:
+                print(f"[CONFIRM] HL position not yet visible (attempt {attempt + 1}/{max_retries}), waiting {retry_delay}s...")
+                await asyncio.sleep(retry_delay)
+            else:
+                break
         
         # Expected values
         expected_def = self.def_weth_amount
