@@ -138,7 +138,7 @@ class ArbEngine:
     POLL_INTERVAL_SEC = 3
     
     # Price gap filter - only execute if prices are synchronized
-    MAX_PRICE_GAP_MS = 150  # Skip execution if HL price is older than this
+    MAX_PRICE_GAP_MS = 200  # Skip execution if HL price is older than this
     
     # TURBO settings
     USE_TURBO = True  # Use TURBO instead of PRIME
