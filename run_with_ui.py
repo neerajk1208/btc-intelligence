@@ -322,9 +322,9 @@ def main():
     global _engine_args
     
     parser = argparse.ArgumentParser(description="ETH Arbitrage Engine with Web UI")
-    parser.add_argument("--size", type=float, default=4000, help="Order size in USD (used if no range set)")
-    parser.add_argument("--min-size", type=float, default=4000, help="Minimum order size for random range")
-    parser.add_argument("--max-size", type=float, default=4500, help="Maximum order size for random range")
+    parser.add_argument("--size", type=float, default=5250, help="Order size in USD (used if no range set)")
+    parser.add_argument("--min-size", type=float, default=5250, help="Minimum order size for random range")
+    parser.add_argument("--max-size", type=float, default=5750, help="Maximum order size for random range")
     parser.add_argument("--cycles", type=int, default=999, help="Number of cycles to run")
     parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
     parser.add_argument("--exit", type=float, default=4.0, help="Exit threshold (bps)")

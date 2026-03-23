@@ -137,6 +137,9 @@ class ArbEngine:
     # Polling
     POLL_INTERVAL_SEC = 3
     
+    # Price gap filter - only execute if prices are synchronized
+    MAX_PRICE_GAP_MS = 150  # Skip execution if HL price is older than this
+    
     # TURBO settings
     USE_TURBO = True  # Use TURBO instead of PRIME
     SLIPPAGE_TOLERANCE = "0.000750"  # 7.5 bps slippage tolerance for TURBO
@@ -1866,6 +1869,11 @@ class ArbEngine:
                 notify_ui("spread", {"hl_price": hl_price, "def_price": def_price, "spread_bps": spread, "status": "WAITING_ENTRY"})
                 
                 if spread <= self.ENTRY_THRESHOLD_BPS:
+                    # Check price gap - skip if prices are too stale
+                    if self._price_gap_ms > self.MAX_PRICE_GAP_MS:
+                        print(f"{now} | Spread: {spread:+.1f}bp | SKIPPED: price gap {self._price_gap_ms:.0f}ms > {self.MAX_PRICE_GAP_MS}ms")
+                        continue
+                    
                     # Ensure valid token before executing
                     if not await self._ensure_valid_token():
                         print(f"[ERROR] Cannot execute entry - token invalid")
@@ -1974,6 +1982,11 @@ class ArbEngine:
                 notify_ui("spread", {"hl_price": hl_price, "def_price": def_price, "spread_bps": spread, "status": "IN_POSITION"})
                 
                 if spread >= self.EXIT_THRESHOLD_BPS:
+                    # Check price gap - skip if prices are too stale
+                    if self._price_gap_ms > self.MAX_PRICE_GAP_MS:
+                        print(f"{now} | Spread: {spread:+.1f}bp | EXIT SKIPPED: price gap {self._price_gap_ms:.0f}ms > {self.MAX_PRICE_GAP_MS}ms")
+                        continue
+                    
                     # Ensure valid token before executing
                     if not await self._ensure_valid_token():
                         print(f"[ERROR] Cannot execute exit - token invalid")
