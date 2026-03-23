@@ -797,15 +797,16 @@ class ArbEngine:
         
         Called AFTER entry execution. HOLDS cycle until confirmed.
         Returns True if positions match expected, False if mismatch.
+        
+        HL Rate Limits (from docs):
+        - Info endpoints: ~1 request/second (weight 20, 1200/min total)
+        - When 429 rate limited: 1 request per 10 seconds
         """
         print("\n[CONFIRM] Verifying entry positions...")
         
-        # Wait a moment for HL to settle before querying (avoid rate limits)
-        await asyncio.sleep(2)
-        
-        # Query actual positions with retry (HL may take a moment to settle)
+        # Query actual positions with retry
+        # HL info endpoints allow ~1 req/sec, but if 429'd we must wait 10s
         max_retries = 3
-        retry_delays = [3, 5, 10]  # Exponential backoff to avoid rate limits
         
         def_weth = 0
         hl_short = 0
@@ -815,11 +816,10 @@ class ArbEngine:
             hl_pos = await self.hl_trader.get_position()
             hl_short = abs(hl_pos.get("size", 0))  # Short is negative, take abs
             
-            # Check for rate limit error (hl_pos might contain error info)
+            # Check for rate limit error - HL requires 10s wait when 429'd
             if hl_pos.get("error") and "429" in str(hl_pos.get("error", "")):
-                delay = retry_delays[attempt] if attempt < len(retry_delays) else 10
-                print(f"[CONFIRM] HL rate limited (attempt {attempt + 1}/{max_retries}), waiting {delay}s...")
-                await asyncio.sleep(delay)
+                print(f"[CONFIRM] HL rate limited (attempt {attempt + 1}/{max_retries}), waiting 10s (HL cooldown)...")
+                await asyncio.sleep(10)
                 continue
             
             # If both positions show up, we're good
@@ -827,11 +827,11 @@ class ArbEngine:
                 print(f"[CONFIRM] Positions detected on attempt {attempt + 1}: DEF {def_weth:.6f}, HL {hl_short:.4f}")
                 break
             
-            # If HL shows 0 but we expect a position, retry with backoff
+            # If HL shows 0 but we expect a position, wait for state to propagate
+            # HL state updates are typically instant, but API caching may cause delay
             if self.hl_size_eth > 0.0001 and hl_short < 0.0001:
-                delay = retry_delays[attempt] if attempt < len(retry_delays) else 10
-                print(f"[CONFIRM] HL position not yet visible (attempt {attempt + 1}/{max_retries}), waiting {delay}s...")
-                await asyncio.sleep(delay)
+                print(f"[CONFIRM] HL position not yet visible (attempt {attempt + 1}/{max_retries}), waiting 2s...")
+                await asyncio.sleep(2)
             else:
                 break
         
