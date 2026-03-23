@@ -800,9 +800,12 @@ class ArbEngine:
         """
         print("\n[CONFIRM] Verifying entry positions...")
         
+        # Wait a moment for HL to settle before querying (avoid rate limits)
+        await asyncio.sleep(2)
+        
         # Query actual positions with retry (HL may take a moment to settle)
-        max_retries = 5
-        retry_delay = 1  # seconds
+        max_retries = 3
+        retry_delays = [3, 5, 10]  # Exponential backoff to avoid rate limits
         
         def_weth = 0
         hl_short = 0
@@ -812,15 +815,23 @@ class ArbEngine:
             hl_pos = await self.hl_trader.get_position()
             hl_short = abs(hl_pos.get("size", 0))  # Short is negative, take abs
             
+            # Check for rate limit error (hl_pos might contain error info)
+            if hl_pos.get("error") and "429" in str(hl_pos.get("error", "")):
+                delay = retry_delays[attempt] if attempt < len(retry_delays) else 10
+                print(f"[CONFIRM] HL rate limited (attempt {attempt + 1}/{max_retries}), waiting {delay}s...")
+                await asyncio.sleep(delay)
+                continue
+            
             # If both positions show up, we're good
             if def_weth > 0.0001 and hl_short > 0.0001:
                 print(f"[CONFIRM] Positions detected on attempt {attempt + 1}: DEF {def_weth:.6f}, HL {hl_short:.4f}")
                 break
             
-            # If HL shows 0 but we expect a position, retry
+            # If HL shows 0 but we expect a position, retry with backoff
             if self.hl_size_eth > 0.0001 and hl_short < 0.0001:
-                print(f"[CONFIRM] HL position not yet visible (attempt {attempt + 1}/{max_retries}), waiting {retry_delay}s...")
-                await asyncio.sleep(retry_delay)
+                delay = retry_delays[attempt] if attempt < len(retry_delays) else 10
+                print(f"[CONFIRM] HL position not yet visible (attempt {attempt + 1}/{max_retries}), waiting {delay}s...")
+                await asyncio.sleep(delay)
             else:
                 break
         
