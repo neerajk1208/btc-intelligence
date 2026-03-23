@@ -3,6 +3,10 @@
 .env.local
 .env.*.local
 
+# Auth tokens and browser data (NEVER commit these)
+auth/tokens.json
+auth/browser_data/
+
 # Python
 __pycache__/
 *.py[cod]
