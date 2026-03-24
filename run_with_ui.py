@@ -144,6 +144,10 @@ def handle_ui_event(event_type: str, data: dict):
         ui_state["cycle_bps"]["total_slippage"] = data.get("total_slippage", 0)
         emit_update()
     
+    elif event_type == "volume":
+        # Emit directly to socket (not part of state_update)
+        socketio.emit('volume', data)
+    
     elif event_type == "token_checked":
         ui_state["token_expires_in_sec"] = data.get("expires_in_sec", 0)
         ui_state["token_expires_at"] = data.get("expires_at", 0)
@@ -327,7 +331,7 @@ def main():
     parser.add_argument("--max-size", type=float, default=5750, help="Maximum order size for random range")
     parser.add_argument("--cycles", type=int, default=999, help="Number of cycles to run")
     parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
-    parser.add_argument("--exit", type=float, default=4.0, help="Exit threshold (bps)")
+    parser.add_argument("--exit", type=float, default=5.0, help="Exit threshold (bps)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode")
     parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps")
     

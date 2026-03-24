@@ -126,7 +126,7 @@ class ArbEngine:
     
     # Thresholds (in basis points)
     ENTRY_THRESHOLD_BPS = 0.0    # Enter when spread < 0 bps (DEF cheaper than HL)
-    EXIT_THRESHOLD_BPS = 4.0     # Exit when spread >= 4 bps
+    EXIT_THRESHOLD_BPS = 5.0     # Exit when spread >= 5 bps
     MIN_PROFIT_BPS = 2.0         # Minimum net profit to exit
     
     # Fee estimates (bps)
@@ -1605,6 +1605,10 @@ class ArbEngine:
             
             print(f"  Spread captured: {spread_bps - self.entry_spread_bps:.1f} bps")
             
+            # Track volume BEFORE reset (DEF sell + HL close)
+            self.total_def_volume += usdc_received
+            self.total_hl_volume += self.hl_size_eth * hl_exit_price
+            
             # Reset ALL state for clean next cycle
             self.in_position = False
             self.entry_spread_bps = 0
@@ -1619,10 +1623,6 @@ class ArbEngine:
             self._last_prime_buy_amount = ""
             self._last_prime_sell_quote_id = ""
             self._last_prime_sell_amount = ""
-            
-            # Track volume (DEF sell + HL close)
-            self.total_def_volume += usdc_received
-            self.total_hl_volume += self.hl_size_eth * hl_exit_price
             
             return True
         else:
@@ -2026,6 +2026,7 @@ class ArbEngine:
                         print(f"[POST-EXIT BALANCES] DEF: ${def_balance:,.2f}, HL: ${hl_balance:,.2f}")
                         print(f"[CYCLE P&L] Start: ${cycle_start_total:,.2f} → End: ${cycle_end_total:,.2f} = ACTUAL P&L: ${actual_pnl:+.2f}")
                         print(f"[VOLUME] DEF: ${self.total_def_volume:,.2f} | HL: ${self.total_hl_volume:,.2f} | Total: ${self.total_def_volume + self.total_hl_volume:,.2f}")
+                        notify_ui("volume", {"def_volume": self.total_def_volume, "hl_volume": self.total_hl_volume, "total_volume": self.total_def_volume + self.total_hl_volume})
                         notify_ui("balances", {"def_usdc": def_balance, "hl_usdc": hl_balance})
                         notify_ui("cycle_complete", {"realized_pnl": actual_pnl, "start_total": cycle_start_total, "end_total": cycle_end_total})
                         
@@ -2115,7 +2116,7 @@ async def main():
     parser.add_argument("--size", type=float, default=750, help="Order size in USD")
     parser.add_argument("--cycles", type=int, default=1, help="Number of cycles to run")
     parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
-    parser.add_argument("--exit", type=float, default=4.0, help="Exit threshold (bps)")
+    parser.add_argument("--exit", type=float, default=5.0, help="Exit threshold (bps)")
     parser.add_argument("--turbo", action="store_true", help="Use TURBO mode (default)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode (with quote)")
     parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps (TURBO only)")

@@ -327,6 +327,18 @@
                     <span class="label">Cycles Completed</span>
                     <span class="value" id="cycles">0</span>
                 </div>
+                <div class="row">
+                    <span class="label">Total Volume</span>
+                    <span class="value" id="total-volume">$0.00</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">DEF Volume</span>
+                    <span class="value" id="def-volume">$0.00</span>
+                </div>
+                <div class="mini-row">
+                    <span class="label">HL Volume</span>
+                    <span class="value" id="hl-volume">$0.00</span>
+                </div>
             </div>
             
             <div class="card">
@@ -741,6 +753,13 @@
                 addEvent('WARNING', 'Close HL short command sent...');
             }
         }
+        
+        // Handle volume updates
+        socket.on('volume', function(data) {
+            document.getElementById('def-volume').textContent = '$' + (data.def_volume || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('hl-volume').textContent = '$' + (data.hl_volume || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('total-volume').textContent = '$' + (data.total_volume || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        });
         
         // Handle close results
         socket.on('close_result', function(data) {
