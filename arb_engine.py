@@ -125,7 +125,7 @@ class ArbEngine:
     WETH_BASE = "0x4200000000000000000000000000000000000006"
     
     # Thresholds (in basis points)
-    ENTRY_THRESHOLD_BPS = 0.0    # Enter when spread < 0 bps (DEF cheaper than HL)
+    ENTRY_THRESHOLD_BPS = 2.0    # Enter when spread < 2 bps
     EXIT_THRESHOLD_BPS = 5.0     # Exit when spread >= 5 bps
     MIN_PROFIT_BPS = 2.0         # Minimum net profit to exit
     
@@ -143,6 +143,9 @@ class ArbEngine:
     # TURBO settings
     USE_TURBO = True  # Use TURBO instead of PRIME
     SLIPPAGE_TOLERANCE = "0.000750"  # 7.5 bps slippage tolerance for TURBO
+    
+    # QuickTrade settings (separate from TURBO/PRIME - uses ddp.definitive.fi endpoint)
+    USE_QUICKTRADE = False  # If True, uses QuickTrade endpoint (overrides TURBO/PRIME)
     
     def __init__(self, size_usd: float = 100.0, min_size: float = None, max_size: float = None):
         # Size configuration
@@ -587,6 +590,47 @@ class ArbEngine:
             "read-token": self.read_token,
             "origin": "https://app.definitive.fi",
             "referer": "https://app.definitive.fi/",
+        }
+    
+    def _def_quicktrade_headers(self, method: str, path: str, body: dict) -> Dict[str, str]:
+        """Get Definitive QuickTrade API headers with HMAC signing.
+        
+        Uses ddp.definitive.fi endpoint with API key + signature auth.
+        """
+        import hmac
+        import hashlib
+        
+        timestamp = str(int(time.time() * 1000))  # milliseconds
+        
+        headers = {
+            "x-definitive-api-key": self.def_api_key,
+            "x-definitive-timestamp": timestamp,
+        }
+        
+        # Sorted headers as "key:json_value" joined by comma
+        sorted_headers = ",".join([
+            f'{k}:{json.dumps(v)}' 
+            for k, v in sorted(headers.items())
+        ])
+        
+        # Body as JSON string
+        body_str = json.dumps(body) if body else ""
+        
+        # Prehash: method:path?queryParams:timestamp:sortedHeaders{body}
+        prehash = f"{method}:{path}?:{timestamp}:{sorted_headers}{body_str}"
+        
+        # Sign (secret already has dpks_ stripped in __init__)
+        signature = hmac.new(
+            self._def_secret_clean.encode(),
+            prehash.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        return {
+            "Content-Type": "application/json",
+            "x-definitive-api-key": self.def_api_key,
+            "x-definitive-timestamp": timestamp,
+            "x-definitive-signature": signature,
         }
     
     async def get_prices(self) -> Tuple[Optional[float], Optional[float]]:
@@ -1137,7 +1181,7 @@ class ArbEngine:
         print(f"{'='*40}")
         
         weth_to_buy = self.size_usd / def_price
-        mode = "TURBO" if self.USE_TURBO else "PRIME"
+        mode = "QUICKTRADE" if self.USE_QUICKTRADE else ("TURBO" if self.USE_TURBO else "PRIME")
         
         print(f"\n[ENTRY] Executing both legs simultaneously ({mode})...")
         print(f"  DEF: BUY {weth_to_buy:.6f} WETH @ ${def_price:.2f}")
@@ -1158,7 +1202,52 @@ class ArbEngine:
         hl_latency_ms = 0
         
         try:
-            if self.USE_TURBO:
+            if self.USE_QUICKTRADE:
+                # QUICKTRADE: Uses ddp.definitive.fi endpoint with HMAC signing
+                # Atomic quote + execution in single call
+                quicktrade_path = "/v2/portfolio/quicktrade"
+                quicktrade_payload = {
+                    "chain": "base",
+                    "targetAsset": self.WETH_BASE,      # Buying WETH
+                    "contraAsset": self.USDC_BASE,      # Paying USDC
+                    "qty": str(self.size_usd),
+                    "orderSide": "buy",
+                    "slippageTolerance": self.SLIPPAGE_TOLERANCE,
+                    "displayAssetPrice": str(def_price),
+                }
+                
+                async def def_order():
+                    start = time.time()
+                    headers = self._def_quicktrade_headers("POST", quicktrade_path, quicktrade_payload)
+                    async with self.session.post(
+                        f"https://ddp.definitive.fi{quicktrade_path}",
+                        json=quicktrade_payload,
+                        headers=headers
+                    ) as resp:
+                        latency = (time.time() - start) * 1000
+                        text = await resp.text()
+                        try:
+                            result = json.loads(text)
+                        except:
+                            result = {"error": text, "status": resp.status}
+                        return resp.status == 200, result, latency
+                
+                async def hl_order():
+                    start = time.time()
+                    result = await self.hl_trader.taker_order("sell", size_usd=self.size_usd, price_hint=hl_price)
+                    latency = (time.time() - start) * 1000
+                    return result, latency
+                
+                def_task = asyncio.create_task(def_order())
+                hl_task = asyncio.create_task(hl_order())
+                
+                (def_success, def_result, def_latency_ms), (hl_result, hl_latency_ms) = await asyncio.gather(def_task, hl_task)
+                hl_success = hl_result.get("success", False)
+                
+                # For QUICKTRADE, estimate amount_out from price
+                amount_out = str(self.size_usd / def_price)
+                
+            elif self.USE_TURBO:
                 # TURBO: Direct order with PRIME quoteId for fast execution
                 async def def_order():
                     start = time.time()
@@ -1383,7 +1472,7 @@ class ArbEngine:
         print(f"[EXIT EXECUTION] Price gap: {self._price_gap_ms:.0f}ms")
         print(f"{'='*40}")
         
-        mode = "TURBO" if self.USE_TURBO else "PRIME"
+        mode = "QUICKTRADE" if self.USE_QUICKTRADE else ("TURBO" if self.USE_TURBO else "PRIME")
         
         # Use stored raw string from entry (no latency on exit)
         exact_weth_balance_str = self.def_weth_amount_raw
@@ -1391,9 +1480,9 @@ class ArbEngine:
         
         print(f"\n[EXIT] Executing both legs simultaneously ({mode})...")
         print(f"  DEF: SELL {exact_weth_balance_str} WETH @ ${def_price:.2f}")
-        if self._last_prime_sell_quote_id:
+        if not self.USE_QUICKTRADE and self._last_prime_sell_quote_id:
             print(f"  DEF: Using SELL quoteId: {self._last_prime_sell_quote_id[:20]}... quotedOut: {self._last_prime_sell_amount}")
-        else:
+        elif not self.USE_QUICKTRADE:
             print(f"  DEF: WARNING - No SELL quoteId available!")
         print(f"  HL:  CLOSE SHORT {self.hl_size_eth:.4f} ETH-PERP @ ${hl_price:.2f}")
         
@@ -1406,7 +1495,48 @@ class ArbEngine:
         hl_latency_ms = 0
         
         try:
-            if self.USE_TURBO:
+            if self.USE_QUICKTRADE:
+                # QUICKTRADE: Uses ddp.definitive.fi endpoint with HMAC signing
+                quicktrade_path = "/v2/portfolio/quicktrade"
+                quicktrade_payload = {
+                    "chain": "base",
+                    "targetAsset": self.WETH_BASE,      # Selling WETH
+                    "contraAsset": self.USDC_BASE,      # Getting USDC
+                    "qty": exact_weth_balance_str,
+                    "orderSide": "sell",
+                    "slippageTolerance": self.SLIPPAGE_TOLERANCE,
+                    "displayAssetPrice": str(def_price),
+                }
+                
+                async def def_order():
+                    start = time.time()
+                    headers = self._def_quicktrade_headers("POST", quicktrade_path, quicktrade_payload)
+                    async with self.session.post(
+                        f"https://ddp.definitive.fi{quicktrade_path}",
+                        json=quicktrade_payload,
+                        headers=headers
+                    ) as resp:
+                        latency = (time.time() - start) * 1000
+                        text = await resp.text()
+                        try:
+                            result = json.loads(text)
+                        except:
+                            result = {"error": text, "status": resp.status}
+                        return resp.status == 200, result, latency
+                
+                async def hl_order():
+                    start = time.time()
+                    result = await self.hl_trader.taker_order("buy", size_usd=self.hl_size_eth * hl_price, price_hint=hl_price)
+                    latency = (time.time() - start) * 1000
+                    return result, latency
+                
+                def_task = asyncio.create_task(def_order())
+                hl_task = asyncio.create_task(hl_order())
+                
+                (def_success, def_result, def_latency_ms), (hl_result, hl_latency_ms) = await asyncio.gather(def_task, hl_task)
+                hl_success = hl_result.get("success", False)
+                
+            elif self.USE_TURBO:
                 # TURBO: Direct order with PRIME SELL quoteId for price locking
                 async def def_order():
                     start = time.time()
@@ -2115,11 +2245,12 @@ async def main():
     parser = argparse.ArgumentParser(description="ETH Arbitrage Engine")
     parser.add_argument("--size", type=float, default=750, help="Order size in USD")
     parser.add_argument("--cycles", type=int, default=1, help="Number of cycles to run")
-    parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps)")
+    parser.add_argument("--entry", type=float, default=2.0, help="Entry threshold (bps)")
     parser.add_argument("--exit", type=float, default=5.0, help="Exit threshold (bps)")
     parser.add_argument("--turbo", action="store_true", help="Use TURBO mode (default)")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode (with quote)")
-    parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps (TURBO only)")
+    parser.add_argument("--quicktrade", action="store_true", help="Use QuickTrade mode (faster execution)")
+    parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps")
     
     args = parser.parse_args()
     
@@ -2129,6 +2260,7 @@ async def main():
     
     # Default to TURBO, use PRIME only if explicitly set
     engine.USE_TURBO = not args.prime
+    engine.USE_QUICKTRADE = args.quicktrade
     engine.SLIPPAGE_TOLERANCE = f"{args.slip / 10000:.6f}"  # Convert bps to decimal
     
     await engine.run(num_cycles=args.cycles)
