@@ -258,11 +258,44 @@
         .card-compact h2 {
             margin-bottom: 10px;
         }
+        
+        /* Config bar */
+        .config-bar {
+            background: #1a2a1a;
+            border: 1px solid #2a4a2a;
+            border-radius: 6px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            font-size: 13px;
+        }
+        .config-item {
+            color: #aaa;
+        }
+        .config-item strong {
+            color: #00ff88;
+        }
+        .config-divider {
+            color: #333;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>ETH ARBITRAGE MONITOR</h1>
+        
+        <div class="config-bar">
+            <span class="config-item">📐 Size: <strong>$4,500 - $5,200</strong></span>
+            <span class="config-divider">|</span>
+            <span class="config-item">📉 Entry: <strong>&lt; 0 bps</strong></span>
+            <span class="config-divider">|</span>
+            <span class="config-item">📈 Exit: <strong>&gt; 5 bps</strong></span>
+            <span class="config-divider">|</span>
+            <span class="config-item">⚡ Mode: <strong>TURBO</strong></span>
+        </div>
         
         <div class="grid">
             <div class="card">
