@@ -154,6 +154,7 @@ class ArbEngine:
         self.size_usd = size_usd  # Will be randomized per cycle if range is set
         self._use_random_size = min_size is not None and max_size is not None
         self.session: Optional[aiohttp.ClientSession] = None
+        self.quicktrade_session: Optional[aiohttp.ClientSession] = None
         self.hl_trader = None
         
         # Position state
@@ -486,7 +487,7 @@ class ArbEngine:
         print(f"Expected fees: ~{self.ROUND_TRIP_FEES} bps round-trip")
         print(f"{'='*60}\n")
         
-        # Definitive session
+        # Definitive session (with Privy cookies for TURBO/PRIME)
         ssl_ctx = ssl.create_default_context(cafile=certifi.where())
         connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         
@@ -497,6 +498,10 @@ class ArbEngine:
         }
         
         self.session = aiohttp.ClientSession(connector=connector, cookies=cookies)
+        
+        # Separate session for QuickTrade (no cookies, uses HMAC auth only)
+        qt_connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+        self.quicktrade_session = aiohttp.ClientSession(connector=qt_connector)
         
         # Hyperliquid trader
         from adapters.hl_trader import HLTrader
@@ -579,6 +584,8 @@ class ArbEngine:
         await self._stop_hl_websocket()
         if self.session:
             await self.session.close()
+        if self.quicktrade_session:
+            await self.quicktrade_session.close()
     
     def _def_headers(self) -> Dict[str, str]:
         """Get Definitive API headers."""
@@ -1219,7 +1226,7 @@ class ArbEngine:
                 async def def_order():
                     start = time.time()
                     headers = self._def_quicktrade_headers("POST", quicktrade_path, quicktrade_payload)
-                    async with self.session.post(
+                    async with self.quicktrade_session.post(
                         f"https://ddp.definitive.fi{quicktrade_path}",
                         json=quicktrade_payload,
                         headers=headers
@@ -1511,7 +1518,7 @@ class ArbEngine:
                 async def def_order():
                     start = time.time()
                     headers = self._def_quicktrade_headers("POST", quicktrade_path, quicktrade_payload)
-                    async with self.session.post(
+                    async with self.quicktrade_session.post(
                         f"https://ddp.definitive.fi{quicktrade_path}",
                         json=quicktrade_payload,
                         headers=headers

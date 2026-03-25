@@ -189,13 +189,18 @@ class HLTrader:
             # IOC = Immediate or Cancel (taker behavior)
             order_type = {"limit": {"tif": "Ioc"}}
             
-            resp = self._sdk.order(
-                name=self.SYMBOL,
-                is_buy=(side == "buy"),
-                sz=size_eth,
-                limit_px=limit_price,
-                order_type=order_type,
-                reduce_only=False,
+            # Run SDK call in thread pool to avoid blocking asyncio event loop
+            loop = asyncio.get_event_loop()
+            resp = await loop.run_in_executor(
+                None,
+                lambda: self._sdk.order(
+                    name=self.SYMBOL,
+                    is_buy=(side == "buy"),
+                    sz=size_eth,
+                    limit_px=limit_price,
+                    order_type=order_type,
+                    reduce_only=False,
+                )
             )
             
             print(f"[HL] Response: {resp}")
