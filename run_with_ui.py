@@ -327,12 +327,12 @@ def main():
     global _engine_args
     
     parser = argparse.ArgumentParser(description="ETH Arbitrage Engine with Web UI")
-    parser.add_argument("--size", type=float, default=5250, help="Order size in USD (used if no range set)")
-    parser.add_argument("--min-size", type=float, default=5250, help="Minimum order size for random range")
-    parser.add_argument("--max-size", type=float, default=5750, help="Maximum order size for random range")
+    parser.add_argument("--size", type=float, default=4850, help="Order size in USD (used if no range set)")
+    parser.add_argument("--min-size", type=float, default=4500, help="Minimum order size for random range")
+    parser.add_argument("--max-size", type=float, default=5200, help="Maximum order size for random range")
     parser.add_argument("--cycles", type=int, default=999, help="Number of cycles to run")
-    parser.add_argument("--entry", type=float, default=2.0, help="Entry threshold (bps)")
-    parser.add_argument("--exit", type=float, default=5.0, help="Exit threshold (bps)")
+    parser.add_argument("--entry", type=float, default=0.0, help="Entry threshold (bps) - enters when spread < this")
+    parser.add_argument("--exit", type=float, default=5.0, help="Exit threshold (bps) - exits when spread > this")
     parser.add_argument("--prime", action="store_true", help="Use PRIME mode")
     parser.add_argument("--quicktrade", action="store_true", help="Use QuickTrade mode (faster execution)")
     parser.add_argument("--slip", type=float, default=7.5, help="Slippage tolerance in bps")
